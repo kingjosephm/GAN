@@ -6,7 +6,7 @@ def halve_image(img, output_path):
     height = 256  # Desired final height
     width = 256  # Desired final width
     k = 0
-    subdir = {0: '/real/', 1: '/fake/'}
+    subdir = {0: '/truth/', 1: '/input/'}
 
     im = Image.open(img)
     imgwidth, imgheight = im.size
