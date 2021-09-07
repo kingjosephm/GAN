@@ -1,6 +1,9 @@
 {
-  "DIR_A_PATH": "",
-  "DIR_B_PATH": "",
+  "IMG_PATH": "/Users/josephking/Downloads/subset",
   "OUTPUT_PATH": "",
-  "IMG_SIZE": 256
+  "IMG_SIZE": 256,
+  "BATCH_SIZE": 1,
+  "BUFFER_SIZE": 400,
+  "VALIDATION_SIZE": 0.2,
+  "OUTPUT_CHANNELS": 3
 }
