@@ -2,7 +2,7 @@ from PIL import Image
 import os
 
 
-def halve_image(img, output_path):
+def split_image(img, output_path):
     height = 256  # Desired final height
     width = 256  # Desired final width
     k = 0
