@@ -381,11 +381,13 @@ class p2p:
             tf.summary.scalar('gen_l1_loss', gen_l1_loss, step=step // 1000)
             tf.summary.scalar('disc_loss', disc_loss, step=step // 1000)
 
-    def generate_images(self, model, test_input, tar):
+    def generate_images(self, model, test_input, tar, step, checkpoint_prefix):
         '''
         :param model:
         :param test_input:
         :param tar:
+        :param step:
+        :param checkpoint_prefix:
         :return:
         '''
         prediction = model(test_input, training=True)
@@ -400,14 +402,17 @@ class p2p:
             # Getting the pixel values in the [0, 1] range to plot.
             plt.imshow(display_list[i] * 0.5 + 0.5)
             plt.axis('off')
-        plt.show()
+
+        plot_path = os.path.join(checkpoint_prefix, '../../', 'test_images')
+        os.makedirs(plot_path, exist_ok=True) # dir should not exist
+        plt.savefig(os.path.join(plot_path, f'step_{step}.jpg'))
 
     def fit(self, train_ds, test_ds, steps, summary_writer, checkpoint, checkpoint_prefix):
         example_input, example_target = next(iter(test_ds.take(1)))
         start = time.time()
 
         for step, (input_image, target) in train_ds.repeat().take(steps).enumerate():
-            if (step) % 1000 == 0:
+            if (step % 1000 == 0) and (step > 0):
                 display.clear_output(wait=True)
 
                 if step != 0:
@@ -415,7 +420,6 @@ class p2p:
 
                 start = time.time()
 
-                self.generate_images(self.generator, example_input, example_target)
                 print(f"Step: {step // 1000}k")
 
             self.train_step(input_image, target, step, summary_writer)
@@ -424,9 +428,14 @@ class p2p:
             if (step + 1) % 10 == 0:
                 print('.', end='', flush=True)
 
-            # Save (checkpoint) the model every 5k steps
+            # Save (checkpoint) the model every 5k steps and at end
+            # Also saves generated training image
             if (step + 1) % 5000 == 0:
                 checkpoint.save(file_prefix=checkpoint_prefix)
+                self.generate_images(self.generator, example_input, example_target, step, checkpoint_prefix)
+            elif (step + 1) == self.config['STEPS']:
+                checkpoint.save(file_prefix=checkpoint_prefix)
+                self.generate_images(self.generator, example_input, example_target, step, checkpoint_prefix)
 
         def predict(pred_ds):
             pass
@@ -461,6 +470,10 @@ def main():
         log_dir = os.path.join(full_path, 'logs')
         os.makedirs(log_dir, exist_ok=False) # dir should not exist, but just in case
         summary_writer = tf.summary.create_file_writer(log_dir)
+
+        # Output config to logging dir
+        with open(os.path.join(log_dir, 'config.json'), 'w') as f:
+            json.dump(config, f)
 
         pix2pix.fit(train_ds=pix2pix.train_dataset,
                     test_ds=pix2pix.test_dataset,
