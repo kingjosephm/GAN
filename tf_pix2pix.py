@@ -17,6 +17,7 @@ class p2p:
         self.discriminator = self.Discriminator()
         self.generator_optimizer = self.optimizer()
         self.discriminator_optimizer = self.optimizer()
+        self.loss_obj = self.loss_object()
 
     def load(self, image_file):
         '''
@@ -292,7 +293,7 @@ class p2p:
         :param target:
         :return:
         '''
-        gan_loss = self.loss_object(tf.ones_like(disc_generated_output), disc_generated_output)
+        gan_loss = self.loss_obj(tf.ones_like(disc_generated_output), disc_generated_output)
 
         # Mean absolute error
         l1_loss = tf.reduce_mean(tf.abs(target - gen_output))
@@ -341,8 +342,8 @@ class p2p:
         :param disc_generated_output:
         :return:
         '''
-        real_loss = self.loss_object(tf.ones_like(disc_real_output), disc_real_output)
-        generated_loss = self.loss_object(tf.zeros_like(disc_generated_output), disc_generated_output)
+        real_loss = self.loss_obj(tf.ones_like(disc_real_output), disc_real_output)
+        generated_loss = self.loss_obj(tf.zeros_like(disc_generated_output), disc_generated_output)
 
         total_disc_loss = real_loss + generated_loss
 
