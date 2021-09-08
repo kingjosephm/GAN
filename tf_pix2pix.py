@@ -5,6 +5,8 @@ import math
 import json
 import tensorflow as tf
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg') # suppresses plot
 from IPython import display
 from datetime import datetime
 
@@ -141,6 +143,8 @@ class p2p:
         :return: tf.data.Dataset
         '''
 
+        print("%"*40, "\nReading in and processing images.\n", "%"*40)
+
         # list of images in dir
         contents = [i for i in os.listdir(self.config['IMG_PATH']) if 'png' in i or 'jpg' in i]
 
@@ -152,7 +156,11 @@ class p2p:
             test = None
 
         else:  # if train mode, break into train/test
-            test = random.sample(contents, math.floor(len(contents) * self.config['TEST_SIZE']))
+            assert(self.config['TEST_SIZE'] > 0), "TEST_SIZE must be strictly > 0!"
+            if self.config['TEST_SIZE'] > 1: # if int test samples
+                test = random.sample(contents, self.config['TEST_SIZE'])
+            else: # fraction
+                test = random.sample(contents, math.ceil(len(contents) * self.config['TEST_SIZE']))
             train = [i for i in contents if i not in test]
 
             test = tf.data.Dataset.from_tensor_slices([self.config['IMG_PATH'] + '/' + i for i in test])
@@ -381,13 +389,13 @@ class p2p:
             tf.summary.scalar('gen_l1_loss', gen_l1_loss, step=step // 1000)
             tf.summary.scalar('disc_loss', disc_loss, step=step // 1000)
 
-    def generate_images(self, model, test_input, tar, step, checkpoint_prefix):
+    def generate_images(self, model, test_input, tar, step, checkpoint_path):
         '''
         :param model:
         :param test_input:
         :param tar:
         :param step:
-        :param checkpoint_prefix:
+        :param checkpoint_path:
         :return:
         '''
         prediction = model(test_input, training=True)
@@ -403,11 +411,20 @@ class p2p:
             plt.imshow(display_list[i] * 0.5 + 0.5)
             plt.axis('off')
 
-        plot_path = os.path.join(checkpoint_prefix, '../../', 'test_images')
+        plot_path = os.path.join(checkpoint_path, '../', 'test_images')
         os.makedirs(plot_path, exist_ok=True) # dir should not exist
         plt.savefig(os.path.join(plot_path, f'step_{step}.jpg'))
 
-    def fit(self, train_ds, test_ds, steps, summary_writer, checkpoint, checkpoint_prefix):
+    def fit(self, train_ds, test_ds, steps, summary_writer, checkpoint_manager):
+        '''
+        :param train_ds:
+        :param test_ds:
+        :param steps:
+        :param summary_writer:
+        :param checkpoint_manager:
+        :return:
+        '''
+
         example_input, example_target = next(iter(test_ds.take(1)))
         start = time.time()
 
@@ -431,11 +448,11 @@ class p2p:
             # Save (checkpoint) the model every 5k steps and at end
             # Also saves generated training image
             if (step + 1) % 5000 == 0:
-                checkpoint.save(file_prefix=checkpoint_prefix)
-                self.generate_images(self.generator, example_input, example_target, step, checkpoint_prefix)
+                checkpoint_manager.save()
+                self.generate_images(self.generator, example_input, example_target, step, checkpoint_manager.directory)
             elif (step + 1) == self.config['STEPS']:
-                checkpoint.save(file_prefix=checkpoint_prefix)
-                self.generate_images(self.generator, example_input, example_target, step, checkpoint_prefix)
+                checkpoint_manager.save()
+                self.generate_images(self.generator, example_input, example_target, step, checkpoint_manager.directory)
 
         def predict(pred_ds):
             pass
@@ -460,11 +477,11 @@ def main():
 
         # Model checkpoints
         checkpoint_dir = os.path.join(full_path, 'training_checkpoints')
-        checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
         checkpoint = tf.train.Checkpoint(generator_optimizer=pix2pix.generator_optimizer,
                                          discriminator_optimizer=pix2pix.discriminator_optimizer,
                                          generator=pix2pix.generator,
                                          discriminator=pix2pix.discriminator)
+        manager = tf.train.CheckpointManager(checkpoint, checkpoint_dir, max_to_keep=3)
 
         # Logging
         log_dir = os.path.join(full_path, 'logs')
@@ -479,8 +496,7 @@ def main():
                     test_ds=pix2pix.test_dataset,
                     steps=config['STEPS'],
                     summary_writer=summary_writer,
-                    checkpoint=checkpoint,
-                    checkpoint_prefix=checkpoint_prefix)
+                    checkpoint_manager=manager)
 
 if __name__ == '__main__':
 
