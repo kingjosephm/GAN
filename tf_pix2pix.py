@@ -2,6 +2,7 @@ import time
 import os
 import random
 import sys
+import math
 import tensorflow as tf
 import matplotlib.pyplot as plt
 from IPython import display
@@ -9,7 +10,7 @@ from IPython import display
 # Pix2Pix in Tensorflow, credit: https://www.tensorflow.org/tutorials/generative/pix2pix
 
 class p2p:
-    def __init__(self, config=None):
+    def __init__(self, config):
         self.config = config
         self.generator = self.Generator()
         self.discriminator = self.Discriminator()
@@ -24,8 +25,6 @@ class p2p:
             image = tf.image.decode_png(image)
         except:
             image = tf.image.decode_jpeg(image)
-        finally:
-            raise TypeError("p2p only accepts JPEG and PNG image types!")
 
         # Split each image tensor into two tensors:
         w = tf.shape(image)[1]
@@ -85,37 +84,62 @@ class p2p:
 
         return input_image, real_image
 
-    def process_images(self, image_file, train=True):
+    def process_images_train(self, image_file):
         '''
-        Loads individual image, applies random jitter (train mode only, else just resizes), normalizes image
+        Loads individual image, applies random jitter, normalizes image. Processing for train images only.
         :param image_file:
-        :param train: bool, whether or not training mode, else prediction mode
         :return:
         '''
         input_image, real_image = self.load(image_file)
-        if train:
-            input_image, real_image = self.random_jitter(input_image, real_image)
-        else: # if validation or test images, don't apply random jitter, just resize
-            input_image, real_image = self.resize(input_image, real_image, self.config['IMG_HEIGHT'], self.config['IMG_WIDTH'])
+        input_image, real_image = self.random_jitter(input_image, real_image)
         input_image, real_image = self.normalize(input_image, real_image)
         return input_image, real_image
 
-    def image_pipeline(self):
+    def process_images_pred(self, image_file):
+        '''
+        Loads individual image, resizes, normalizes image. Processing for test/pred images only.
+        :param image_file:
+        :return:
+        '''
+        input_image, real_image = self.load(image_file)
+        input_image, real_image = self.resize(input_image, real_image, self.config['IMG_HEIGHT'], self.config['IMG_WIDTH'])
+        input_image, real_image = self.normalize(input_image, real_image)
+        return input_image, real_image
+
+    def image_pipeline(self, predict=False):
         '''
         Builds input pipeline with tf.data
         :return: tf.data.Dataset
         '''
-        try:
-            dataset = tf.data.Dataset.list_files(self.config['IMG_PATH'] + '/*.png')
-        except:
-            dataset = tf.data.Dataset.list_files(self.config['IMG_PATH'] + '/*.jpg')
-        finally:
-            raise TypeError("p2p only accepts JPEG and PNG image types!")
 
-        dataset = dataset.map(self.process_images, num_parallel_calls=tf.data.AUTOTUNE)
-        dataset = dataset.shuffle(self.config['BUFFER_SIZE'])
-        dataset = dataset.batch(self.config["BATCH_SIZE"])
-        return dataset
+        # list of images in dir
+        contents = [i for i in os.listdir(self.config['IMG_PATH']) if 'png' in i or 'jpg' in i]
+
+        if predict:  # all images in `train` used for prediction
+            train = tf.data.Dataset.from_tensor_slices([self.config['IMG_PATH'] + '/' + i for i in contents])
+            train = train.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
+            train = train.shuffle(self.config['BUFFER_SIZE'])
+            train = train.batch(self.config["BATCH_SIZE"])
+            test = None
+
+        else:  # if train mode, break into train/test
+            test = random.sample(contents, math.floor(len(contents) * self.config['TEST_SIZE']))
+            train = [i for i in contents if i not in test]
+
+            test = tf.data.Dataset.from_tensor_slices([self.config['IMG_PATH'] + '/' + i for i in test])
+            train = tf.data.Dataset.from_tensor_slices([self.config['IMG_PATH'] + '/' + i for i in train])
+
+            # process test images
+            test = test.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
+            test = test.shuffle(self.config['BUFFER_SIZE'])
+            test = test.batch(self.config["BATCH_SIZE"])
+
+            # process training images
+            train = train.map(self.process_images_train, num_parallel_calls=tf.data.AUTOTUNE)
+            train = train.shuffle(self.config['BUFFER_SIZE'])
+            train = train.batch(self.config["BATCH_SIZE"])
+
+        return train, test
 
     def downsample(self, filters, size, apply_batchnorm=True):
         '''
@@ -362,6 +386,10 @@ class p2p:
 def main(config):
 
     pix2pix = p2p(config)
+    if config['PREDICT']:
+        pix2pix.prediction_dataset, _ = pix2pix.image_pipeline(predict=True)
+    else: # if train mode
+        pix2pix.train_dataset, pix2pix.test_dataset = pix2pix.image_pipeline(predict=False)
 
 
 if __name__ == '__main__':
