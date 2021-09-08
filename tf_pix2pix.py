@@ -1,11 +1,12 @@
 import time
 import os
 import random
-import sys
 import math
+import json
 import tensorflow as tf
 import matplotlib.pyplot as plt
 from IPython import display
+from datetime import datetime
 
 # Pix2Pix in Tensorflow, credit: https://www.tensorflow.org/tutorials/generative/pix2pix
 
@@ -17,8 +18,11 @@ class p2p:
         self.generator_optimizer = self.optimizer()
         self.discriminator_optimizer = self.optimizer()
 
-
     def load(self, image_file):
+        '''
+        :param image_file:
+        :return:
+        '''
         # Read and decode an image file to a uint8 tensor
         image = tf.io.read_file(image_file)
         try:
@@ -53,11 +57,25 @@ class p2p:
         plt.imshow(real / 255.0)
 
     def resize(self, input_image, real_image, height, width):
+        '''
+        :param input_image:
+        :param real_image:
+        :param height:
+        :param width:
+        :return:
+        '''
         input_image = tf.image.resize(input_image, [height, width], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
         real_image = tf.image.resize(real_image, [height, width], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
         return input_image, real_image
 
     def random_crop(self, input_image, real_image, height, width):
+        '''
+        :param input_image:
+        :param real_image:
+        :param height:
+        :param width:
+        :return:
+        '''
         stacked_image = tf.stack([input_image, real_image], axis=0)
         cropped_image = tf.image.random_crop(
             stacked_image, size=[2, height, width, 3])
@@ -65,12 +83,22 @@ class p2p:
 
     # Normalizing the images to [-1, 1]
     def normalize(self, input_image, real_image):
+        '''
+        :param input_image:
+        :param real_image:
+        :return:
+        '''
         input_image = (input_image / 127.5) - 1
         real_image = (real_image / 127.5) - 1
         return input_image, real_image
 
     @tf.function()
     def random_jitter(self, input_image, real_image):
+        '''
+        :param input_image:
+        :param real_image:
+        :return:
+        '''
         # Resizing to height+30px by width+30px
         input_image, real_image = self.resize(input_image, real_image, self.config['IMG_HEIGHT']+30, self.config['IMG_WIDTH']+30)
 
@@ -108,7 +136,7 @@ class p2p:
 
     def image_pipeline(self, predict=False):
         '''
-        Builds input pipeline with tf.data
+        :param predict:
         :return: tf.data.Dataset
         '''
 
@@ -244,6 +272,9 @@ class p2p:
         return tf.keras.Model(inputs=inputs, outputs=x)
 
     def loss_object(self):
+        '''
+        :return:
+        '''
         return tf.keras.losses.BinaryCrossentropy(from_logits=True)
 
     def optimizer(self):
@@ -319,6 +350,13 @@ class p2p:
 
     @tf.function
     def train_step(self, input_image, target, step, summary_writer):
+        '''
+        :param input_image:
+        :param target:
+        :param step:
+        :param summary_writer:
+        :return:
+        '''
         with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
             gen_output = self.generator(input_image, training=True)
 
@@ -343,6 +381,12 @@ class p2p:
             tf.summary.scalar('disc_loss', disc_loss, step=step // 1000)
 
     def generate_images(self, model, test_input, tar):
+        '''
+        :param model:
+        :param test_input:
+        :param tar:
+        :return:
+        '''
         prediction = model(test_input, training=True)
         plt.figure(figsize=(15, 15))
 
@@ -357,7 +401,7 @@ class p2p:
             plt.axis('off')
         plt.show()
 
-    def fit(self, train_ds, test_ds, steps):
+    def fit(self, train_ds, test_ds, steps, summary_writer, checkpoint, checkpoint_prefix):
         example_input, example_target = next(iter(test_ds.take(1)))
         start = time.time()
 
@@ -373,7 +417,7 @@ class p2p:
                 self.generate_images(self.generator, example_input, example_target)
                 print(f"Step: {step // 1000}k")
 
-            self.train_step(input_image, target, step)
+            self.train_step(input_image, target, step, summary_writer)
 
             # Training step
             if (step + 1) % 10 == 0:
@@ -383,18 +427,47 @@ class p2p:
             if (step + 1) % 5000 == 0:
                 checkpoint.save(file_prefix=checkpoint_prefix)
 
-def main(config):
+        def predict(pred_ds):
+            pass
+
+def main():
+
+    with open('config.json') as j:
+        config = json.load(j)
 
     pix2pix = p2p(config)
+
     if config['PREDICT']:
         pix2pix.prediction_dataset, _ = pix2pix.image_pipeline(predict=True)
+
     else: # if train mode
         pix2pix.train_dataset, pix2pix.test_dataset = pix2pix.image_pipeline(predict=False)
 
+        # Directing output
+        os.makedirs(config['OUTPUT_PATH'], exist_ok=True)
+        full_path = config['OUTPUT_PATH'] + '/' + datetime.now().strftime("%Y-%m-%d-%Hh%M")
+        os.makedirs(full_path, exist_ok=True) # will overwrite folder if model run within same minute
+
+        # Model checkpoints
+        checkpoint_dir = os.path.join(full_path, 'training_checkpoints')
+        checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
+        checkpoint = tf.train.Checkpoint(generator_optimizer=pix2pix.generator_optimizer,
+                                         discriminator_optimizer=pix2pix.discriminator_optimizer,
+                                         generator=pix2pix.generator,
+                                         discriminator=pix2pix.discriminator)
+
+        # Logging
+        log_dir = os.path.join(full_path, 'logs')
+        os.makedirs(log_dir, exist_ok=False) # dir should not exist, but just in case
+        summary_writer = tf.summary.create_file_writer(log_dir)
+
+        pix2pix.fit(train_ds=pix2pix.train_dataset,
+                    test_ds=pix2pix.test_dataset,
+                    steps=config['STEPS'],
+                    summary_writer=summary_writer,
+                    checkpoint=checkpoint,
+                    checkpoint_prefix=checkpoint_prefix)
 
 if __name__ == '__main__':
 
-   assert(sys.argv == 2), "Incorrect number of input params! Script accepts only config file as param"
-
-   config = sys.argv[1]
-   main(config)
+   main()
