@@ -143,7 +143,7 @@ class p2p:
         :return: tf.data.Dataset
         '''
 
-        print("%"*40, "\nReading in and processing images.\n", "%"*40)
+        print("\nReading in and processing images.\n", flush=True)
 
         # list of images in dir
         contents = [i for i in os.listdir(self.config['IMG_PATH']) if 'png' in i or 'jpg' in i]
@@ -389,17 +389,17 @@ class p2p:
             tf.summary.scalar('gen_l1_loss', gen_l1_loss, step=step // 1000)
             tf.summary.scalar('disc_loss', disc_loss, step=step // 1000)
 
-    def generate_images(self, model, test_input, tar, step, checkpoint_path):
+    def generate_images(self, model, test_input, tar, step, output_path):
         '''
         :param model:
         :param test_input:
         :param tar:
         :param step:
-        :param checkpoint_path:
+        :param output_path:
         :return:
         '''
         prediction = model(test_input, training=True)
-        plt.figure(figsize=(15, 15))
+        plt.figure(figsize=(12, 8))
 
         display_list = [test_input[0], tar[0], prediction[0]]
         title = ['Input Image', 'Ground Truth', 'Predicted Image']
@@ -411,9 +411,9 @@ class p2p:
             plt.imshow(display_list[i] * 0.5 + 0.5)
             plt.axis('off')
 
-        plot_path = os.path.join(checkpoint_path, '../', 'test_images')
+        plot_path = os.path.join(output_path, '../', 'test_images') # uses checkpoint manager path as contains strf datetime
         os.makedirs(plot_path, exist_ok=True) # dir should not exist
-        plt.savefig(os.path.join(plot_path, f'step_{step}.jpg'))
+        plt.savefig(os.path.join(plot_path, f'step_{step}.png'), dpi=80)
 
     def fit(self, train_ds, test_ds, steps, summary_writer, checkpoint_manager):
         '''
@@ -424,6 +424,8 @@ class p2p:
         :param checkpoint_manager:
         :return:
         '''
+
+        print("\nTraining...\n", flush=True)
 
         example_input, example_target = next(iter(test_ds.take(1)))
         start = time.time()
@@ -454,8 +456,31 @@ class p2p:
                 checkpoint_manager.save()
                 self.generate_images(self.generator, example_input, example_target, step, checkpoint_manager.directory)
 
-        def predict(pred_ds):
-            pass
+    def predict(self, pred_ds, output_path):
+
+        print("\nRendering images using pretrained weights\n")
+
+        img_nr = 0
+        for input, target in pred_ds:
+            prediction = self.generator(input, training=False)
+            plt.figure(figsize=(12, 8))
+
+            display_list = [input[0], target[0], prediction[0]]
+            title = ['Input Image', 'Ground Truth', 'Predicted Image']
+
+            for i in range(3):
+                plt.subplot(1, 3, i + 1)
+                plt.title(title[i])
+                # Getting the pixel values in the [0, 1] range to plot.
+                plt.imshow(display_list[i] * 0.5 + 0.5)
+                plt.axis('off')
+
+            plot_path = os.path.join(output_path, 'prediction_images')
+            os.makedirs(plot_path, exist_ok=True)  # dir should not exist
+            plt.savefig(os.path.join(plot_path, f'img_{img_nr}.png'), dpi=80)
+            print('.', end='', flush=True)
+            img_nr += 1
+
 
 def main():
 
@@ -464,23 +489,27 @@ def main():
 
     pix2pix = p2p(config)
 
+    # Create or read from model checkpoints
+    checkpoint = tf.train.Checkpoint(generator_optimizer=pix2pix.generator_optimizer,
+                                     discriminator_optimizer=pix2pix.discriminator_optimizer,
+                                     generator=pix2pix.generator,
+                                     discriminator=pix2pix.discriminator)
+
+    # Directing output
+    os.makedirs(config['OUTPUT_PATH'], exist_ok=True)
+    full_path = config['OUTPUT_PATH'] + '/' + datetime.now().strftime("%Y-%m-%d-%Hh%M")
+    os.makedirs(full_path, exist_ok=True)  # will overwrite folder if model run within same minute
+
     if config['PREDICT']:
-        pix2pix.prediction_dataset, _ = pix2pix.image_pipeline(predict=True)
+        prediction_dataset, _ = pix2pix.image_pipeline(predict=True)
+        checkpoint.restore(tf.train.latest_checkpoint(config['WEIGHTS_PATH'])).expect_partial()
+        pix2pix.predict(prediction_dataset, full_path)
 
     else: # if train mode
-        pix2pix.train_dataset, pix2pix.test_dataset = pix2pix.image_pipeline(predict=False)
+        train_dataset, test_dataset = pix2pix.image_pipeline(predict=False)
 
-        # Directing output
-        os.makedirs(config['OUTPUT_PATH'], exist_ok=True)
-        full_path = config['OUTPUT_PATH'] + '/' + datetime.now().strftime("%Y-%m-%d-%Hh%M")
-        os.makedirs(full_path, exist_ok=True) # will overwrite folder if model run within same minute
-
-        # Model checkpoints
+        # Outputting model checkpoints
         checkpoint_dir = os.path.join(full_path, 'training_checkpoints')
-        checkpoint = tf.train.Checkpoint(generator_optimizer=pix2pix.generator_optimizer,
-                                         discriminator_optimizer=pix2pix.discriminator_optimizer,
-                                         generator=pix2pix.generator,
-                                         discriminator=pix2pix.discriminator)
         manager = tf.train.CheckpointManager(checkpoint, checkpoint_dir, max_to_keep=3)
 
         # Logging
@@ -492,8 +521,8 @@ def main():
         with open(os.path.join(log_dir, 'config.json'), 'w') as f:
             json.dump(config, f)
 
-        pix2pix.fit(train_ds=pix2pix.train_dataset,
-                    test_ds=pix2pix.test_dataset,
+        pix2pix.fit(train_ds=train_dataset,
+                    test_ds=test_dataset,
                     steps=config['STEPS'],
                     summary_writer=summary_writer,
                     checkpoint_manager=manager)
