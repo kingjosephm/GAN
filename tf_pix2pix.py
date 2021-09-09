@@ -434,12 +434,8 @@ class p2p:
             if (step % 1000 == 0) and (step > 0):
                 display.clear_output(wait=True)
 
-                if step != 0:
-                    print(f'Time taken for 1000 steps: {time.time() - start:.2f} sec\n')
-
-                start = time.time()
-
                 print(f"Step: {step // 1000}k")
+                print(f'Cumulative training time: {time.time() - start:.2f} sec\n')
 
             self.train_step(input_image, target, step, summary_writer)
 
@@ -452,9 +448,12 @@ class p2p:
             if (step + 1) % 5000 == 0:
                 checkpoint_manager.save()
                 self.generate_images(self.generator, example_input, example_target, step, checkpoint_manager.directory)
-            elif (step + 1) == self.config['STEPS']:
+
+            # At end save checkpoint and final test image
+            if (step + 1) == self.config['STEPS']:
                 checkpoint_manager.save()
                 self.generate_images(self.generator, example_input, example_target, step, checkpoint_manager.directory)
+                print(f'Cumulative training time at end of {step} steps: {time.time() - start:.2f} sec\n')
 
     def predict(self, pred_ds, output_path):
         '''
@@ -538,6 +537,8 @@ def main():
                     steps=config['STEPS'],
                     summary_writer=summary_writer,
                     checkpoint_manager=manager)
+
+    print("Done.")
 
 if __name__ == '__main__':
 
