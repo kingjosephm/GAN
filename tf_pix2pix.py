@@ -1,3 +1,6 @@
+# Author: Joe King
+# Pix2Pix in Tensorflow, credit: https://www.tensorflow.org/tutorials/generative/pix2pix
+
 import time
 import os
 import random
@@ -10,11 +13,24 @@ matplotlib.use('Agg') # suppresses plot
 from IPython import display
 from datetime import datetime
 
-# Pix2Pix in Tensorflow, credit: https://www.tensorflow.org/tutorials/generative/pix2pix
+# Disable TensorFlow AUTO sharding policy warning
+options = tf.data.Options()
+options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+
+
+# Configure distributed training across GPUs, if available
+print("Num GPUs Available: ", len(tf.config.list_physical_devices("GPU")))
+if tf.config.list_physical_devices('GPU'):
+    strategy = tf.distribute.MirroredStrategy(devices=["/gpu:0"])
+else:  # Use the Default Strategy
+    #strategy = tf.distribute.get_strategy()  # default distribution strategy
+    strategy = tf.distribute.OneDeviceStrategy('/CPU:0')  # use for debugging
+
 
 class p2p:
     def __init__(self, config):
         self.config = config
+        self.config['GLOBAL_BATCH_SIZE'] = self.config['BATCH_SIZE_PER_REPLICA'] * strategy.num_replicas_in_sync
         self.generator = self.Generator()
         self.discriminator = self.Discriminator()
         self.generator_optimizer = self.optimizer()
@@ -139,8 +155,10 @@ class p2p:
 
     def image_pipeline(self, predict=False):
         '''
-        :param predict:
-        :return: tf.data.Dataset
+        :param predict: bool, whether or not to create train/test split. False treats all images as valid for prediction.
+        :return:
+            train - tf.distribute.DistributedDataset object
+            test - tf.distribute.DistributedDataset (or None if predict=True)
         '''
 
         print("\nReading in and processing images.\n", flush=True)
@@ -152,7 +170,7 @@ class p2p:
             train = tf.data.Dataset.from_tensor_slices([self.config['IMG_PATH'] + '/' + i for i in contents])
             train = train.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
             train = train.shuffle(self.config['BUFFER_SIZE'])
-            train = train.batch(self.config["BATCH_SIZE"])
+            train = train.batch(self.config["GLOBAL_BATCH_SIZE"])
             test = None
 
         else:  # if train mode, break into train/test
@@ -169,12 +187,16 @@ class p2p:
             # process test images
             test = test.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
             test = test.shuffle(self.config['BUFFER_SIZE'])
-            test = test.batch(self.config["BATCH_SIZE"])
+            test = test.batch(self.config["GLOBAL_BATCH_SIZE"]).repeat()
+            test = test.with_options(options)
+            #test = iter(strategy.experimental_distribute_dataset(test))  # creates tf.distribute.DistributedDataset object
 
             # process training images
             train = train.map(self.process_images_train, num_parallel_calls=tf.data.AUTOTUNE)
             train = train.shuffle(self.config['BUFFER_SIZE'])
-            train = train.batch(self.config["BATCH_SIZE"])
+            train = train.batch(self.config["GLOBAL_BATCH_SIZE"]).repeat()
+            train = train.with_options(options)
+            #train = iter(strategy.experimental_distribute_dataset(train))
 
         return train, test
 
@@ -231,67 +253,74 @@ class p2p:
         Define generator by combining down- and upsamplers.
         :return: tf.keras Model class
         '''
-        inputs = tf.keras.layers.Input(shape=[256, 256, 3])
 
-        down_stack = [
-            self.downsample(64, 4, apply_batchnorm=False),  # (batch_size, 128, 128, 64)
-            self.downsample(128, 4),  # (batch_size, 64, 64, 128)
-            self.downsample(256, 4),  # (batch_size, 32, 32, 256)
-            self.downsample(512, 4),  # (batch_size, 16, 16, 512)
-            self.downsample(512, 4),  # (batch_size, 8, 8, 512)
-            self.downsample(512, 4),  # (batch_size, 4, 4, 512)
-            self.downsample(512, 4),  # (batch_size, 2, 2, 512)
-            self.downsample(512, 4),  # (batch_size, 1, 1, 512)
-        ]
+        with strategy.scope():
 
-        up_stack = [
-            self.upsample(512, 4, apply_dropout=True),  # (batch_size, 2, 2, 1024)
-            self.upsample(512, 4, apply_dropout=True),  # (batch_size, 4, 4, 1024)
-            self.upsample(512, 4, apply_dropout=True),  # (batch_size, 8, 8, 1024)
-            self.upsample(512, 4),  # (batch_size, 16, 16, 1024)
-            self.upsample(256, 4),  # (batch_size, 32, 32, 512)
-            self.upsample(128, 4),  # (batch_size, 64, 64, 256)
-            self.upsample(64, 4),  # (batch_size, 128, 128, 128)
-        ]
+            inputs = tf.keras.layers.Input(shape=[256, 256, 3])
 
-        initializer = tf.random_normal_initializer(0., 0.02)
-        last = tf.keras.layers.Conv2DTranspose(self.config['OUTPUT_CHANNELS'], 4,
-                                               strides=2,
-                                               padding='same',
-                                               kernel_initializer=initializer,
-                                               activation='tanh')  # (batch_size, 256, 256, 3)
+            down_stack = [
+                self.downsample(64, 4, apply_batchnorm=False),  # (batch_size, 128, 128, 64)
+                self.downsample(128, 4),  # (batch_size, 64, 64, 128)
+                self.downsample(256, 4),  # (batch_size, 32, 32, 256)
+                self.downsample(512, 4),  # (batch_size, 16, 16, 512)
+                self.downsample(512, 4),  # (batch_size, 8, 8, 512)
+                self.downsample(512, 4),  # (batch_size, 4, 4, 512)
+                self.downsample(512, 4),  # (batch_size, 2, 2, 512)
+                self.downsample(512, 4),  # (batch_size, 1, 1, 512)
+            ]
 
-        x = inputs
+            up_stack = [
+                self.upsample(512, 4, apply_dropout=True),  # (batch_size, 2, 2, 1024)
+                self.upsample(512, 4, apply_dropout=True),  # (batch_size, 4, 4, 1024)
+                self.upsample(512, 4, apply_dropout=True),  # (batch_size, 8, 8, 1024)
+                self.upsample(512, 4),  # (batch_size, 16, 16, 1024)
+                self.upsample(256, 4),  # (batch_size, 32, 32, 512)
+                self.upsample(128, 4),  # (batch_size, 64, 64, 256)
+                self.upsample(64, 4),  # (batch_size, 128, 128, 128)
+            ]
 
-        # Downsampling through the model
-        skips = []
-        for down in down_stack:
-            x = down(x)
-            skips.append(x)
+            initializer = tf.random_normal_initializer(0., 0.02)
+            last = tf.keras.layers.Conv2DTranspose(self.config['OUTPUT_CHANNELS'], 4,
+                                                   strides=2,
+                                                   padding='same',
+                                                   kernel_initializer=initializer,
+                                                   activation='tanh')  # (batch_size, 256, 256, 3)
 
-        skips = reversed(skips[:-1])
+            x = inputs
 
-        # Upsampling and establishing the skip connections
-        for up, skip in zip(up_stack, skips):
-            x = up(x)
-            x = tf.keras.layers.Concatenate()([x, skip])
+            # Downsampling through the model
+            skips = []
+            for down in down_stack:
+                x = down(x)
+                skips.append(x)
 
-        x = last(x)
+            skips = reversed(skips[:-1])
 
-        return tf.keras.Model(inputs=inputs, outputs=x)
+            # Upsampling and establishing the skip connections
+            for up, skip in zip(up_stack, skips):
+                x = up(x)
+                x = tf.keras.layers.Concatenate()([x, skip])
+
+            x = last(x)
+
+            model = tf.keras.Model(inputs=inputs, outputs=x)
+
+        return model
 
     def loss_object(self):
         '''
         :return:
         '''
-        return tf.keras.losses.BinaryCrossentropy(from_logits=True)
+        return tf.keras.losses.BinaryCrossentropy(from_logits=True, reduction=tf.keras.losses.Reduction.NONE)
 
     def optimizer(self):
         '''
         Optimizer for both generator and discriminators
         :return: tf.keras Adam optimizer
         '''
-        return tf.keras.optimizers.Adam(2e-4, beta_1=0.5)
+        with strategy.scope():
+            optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)  # TODO - learning rate by batch size, if >GPU
+        return optimizer
 
     def generator_loss(self, disc_generated_output, gen_output, target):
         '''
@@ -301,12 +330,14 @@ class p2p:
         :param target:
         :return:
         '''
-        gan_loss = self.loss_obj(tf.ones_like(disc_generated_output), disc_generated_output)
+        with strategy.scope():
 
-        # Mean absolute error
-        l1_loss = tf.reduce_mean(tf.abs(target - gen_output))
+            gan_loss = tf.reduce_sum(self.loss_obj(tf.ones_like(disc_generated_output), disc_generated_output))  * (1. / self.config['GLOBAL_BATCH_SIZE'])
 
-        total_gen_loss = gan_loss + (100 * l1_loss) # 100=LAMBDA
+            # Mean absolute error
+            l1_loss = tf.reduce_mean(tf.abs(target - gen_output))
+
+            total_gen_loss = gan_loss + (100 * l1_loss) # 100=LAMBDA
 
         return total_gen_loss, gan_loss, l1_loss
 
@@ -316,32 +347,36 @@ class p2p:
         is real or not real
         :return:
         '''
-        initializer = tf.random_normal_initializer(0., 0.02)
 
-        inp = tf.keras.layers.Input(shape=[256, 256, 3], name='input_image')
-        tar = tf.keras.layers.Input(shape=[256, 256, 3], name='target_image')
+        with strategy.scope():
+            initializer = tf.random_normal_initializer(0., 0.02)
 
-        x = tf.keras.layers.concatenate([inp, tar])  # (batch_size, 256, 256, channels*2)
+            inp = tf.keras.layers.Input(shape=[256, 256, 3], name='input_image')
+            tar = tf.keras.layers.Input(shape=[256, 256, 3], name='target_image')
 
-        down1 = self.downsample(64, 4, False)(x)  # (batch_size, 128, 128, 64)
-        down2 = self.downsample(128, 4)(down1)  # (batch_size, 64, 64, 128)
-        down3 = self.downsample(256, 4)(down2)  # (batch_size, 32, 32, 256)
+            x = tf.keras.layers.concatenate([inp, tar])  # (batch_size, 256, 256, channels*2)
 
-        zero_pad1 = tf.keras.layers.ZeroPadding2D()(down3)  # (batch_size, 34, 34, 256)
-        conv = tf.keras.layers.Conv2D(512, 4, strides=1,
-                                      kernel_initializer=initializer,
-                                      use_bias=False)(zero_pad1)  # (batch_size, 31, 31, 512)
+            down1 = self.downsample(64, 4, False)(x)  # (batch_size, 128, 128, 64)
+            down2 = self.downsample(128, 4)(down1)  # (batch_size, 64, 64, 128)
+            down3 = self.downsample(256, 4)(down2)  # (batch_size, 32, 32, 256)
 
-        batchnorm1 = tf.keras.layers.BatchNormalization()(conv)
+            zero_pad1 = tf.keras.layers.ZeroPadding2D()(down3)  # (batch_size, 34, 34, 256)
+            conv = tf.keras.layers.Conv2D(512, 4, strides=1,
+                                          kernel_initializer=initializer,
+                                          use_bias=False)(zero_pad1)  # (batch_size, 31, 31, 512)
 
-        leaky_relu = tf.keras.layers.LeakyReLU()(batchnorm1)
+            batchnorm1 = tf.keras.layers.BatchNormalization()(conv)
 
-        zero_pad2 = tf.keras.layers.ZeroPadding2D()(leaky_relu)  # (batch_size, 33, 33, 512)
+            leaky_relu = tf.keras.layers.LeakyReLU()(batchnorm1)
 
-        last = tf.keras.layers.Conv2D(1, 4, strides=1,
-                                      kernel_initializer=initializer)(zero_pad2)  # (batch_size, 30, 30, 1)
+            zero_pad2 = tf.keras.layers.ZeroPadding2D()(leaky_relu)  # (batch_size, 33, 33, 512)
 
-        return tf.keras.Model(inputs=[inp, tar], outputs=last)
+            last = tf.keras.layers.Conv2D(1, 4, strides=1,
+                                          kernel_initializer=initializer)(zero_pad2)  # (batch_size, 30, 30, 1)
+
+            model = tf.keras.Model(inputs=[inp, tar], outputs=last)
+
+        return model
 
     def discriminator_loss(self, disc_real_output, disc_generated_output):
         '''
@@ -350,10 +385,12 @@ class p2p:
         :param disc_generated_output:
         :return:
         '''
-        real_loss = self.loss_obj(tf.ones_like(disc_real_output), disc_real_output)
-        generated_loss = self.loss_obj(tf.zeros_like(disc_generated_output), disc_generated_output)
+        with strategy.scope():
 
-        total_disc_loss = real_loss + generated_loss
+            real_loss = tf.reduce_sum(self.loss_obj(tf.ones_like(disc_real_output), disc_real_output))  * (1. / self.config['GLOBAL_BATCH_SIZE'])
+            generated_loss = tf.reduce_sum(self.loss_obj(tf.zeros_like(disc_generated_output), disc_generated_output)) * (1. / self.config['GLOBAL_BATCH_SIZE'])
+
+            total_disc_loss = real_loss + generated_loss
 
         return total_disc_loss
 
@@ -366,6 +403,8 @@ class p2p:
         :param summary_writer:
         :return:
         '''
+
+        # TODO - consider different numbers of generator or discriminator steps each time
         with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
             gen_output = self.generator(input_image, training=True)
 
@@ -435,7 +474,7 @@ class p2p:
                 display.clear_output(wait=True)
 
                 print(f"Step: {step // 1000}k")
-                print(f'Cumulative training time: {time.time() - start:.2f} sec\n')
+                print(f'\nCumulative training time: {time.time() - start:.2f} sec\n')
 
             self.train_step(input_image, target, step, summary_writer)
 
@@ -530,11 +569,11 @@ def main():
 
         # Output config to logging dir
         with open(os.path.join(log_dir, 'config.json'), 'w') as f:
-            json.dump(config, f)
+            json.dump(pix2pix.config, f)
 
         pix2pix.fit(train_ds=train_dataset,
                     test_ds=test_dataset,
-                    steps=config['STEPS'],
+                    steps=pix2pix.config['STEPS'],
                     summary_writer=summary_writer,
                     checkpoint_manager=manager)
 
