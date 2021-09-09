@@ -4,7 +4,7 @@
   "WEIGHTS_PATH": "/Users/josephking/Downloads/subset/output/2021-09-08-16h47/training_checkpoints",
   "IMG_HEIGHT": 256,
   "IMG_WIDTH": 256,
-  "BATCH_SIZE": 1,
+  "BATCH_SIZE_PER_REPLICA": 1,
   "BUFFER_SIZE": 400,
   "TEST_SIZE": 3,
   "OUTPUT_CHANNELS": 3,
