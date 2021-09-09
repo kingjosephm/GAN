@@ -399,7 +399,7 @@ class p2p:
         :return:
         '''
         prediction = model(test_input, training=True)
-        plt.figure(figsize=(12, 8))
+        plt.figure(figsize=(15, 6))
 
         display_list = [test_input[0], tar[0], prediction[0]]
         title = ['Input Image', 'Ground Truth', 'Predicted Image']
@@ -457,14 +457,19 @@ class p2p:
                 self.generate_images(self.generator, example_input, example_target, step, checkpoint_manager.directory)
 
     def predict(self, pred_ds, output_path):
-
+        '''
+        :param pred_ds:
+        :param output_path:
+        :return:
+        '''
         print("\nRendering images using pretrained weights\n")
 
         img_nr = 0
         for input, target in pred_ds:
             prediction = self.generator(input, training=False)
-            plt.figure(figsize=(12, 8))
 
+            # Three image subplots
+            plt.figure(figsize=(15, 6))
             display_list = [input[0], target[0], prediction[0]]
             title = ['Input Image', 'Ground Truth', 'Predicted Image']
 
@@ -478,6 +483,13 @@ class p2p:
             plot_path = os.path.join(output_path, 'prediction_images')
             os.makedirs(plot_path, exist_ok=True)  # dir should not exist
             plt.savefig(os.path.join(plot_path, f'img_{img_nr}.png'), dpi=80)
+            plt.close()
+
+            # Just prediction image
+            plt.figure(figsize=(6, 6))
+            plt.imshow(prediction[0] * 0.5 + 0.5)
+            plt.axis('off')
+            plt.savefig(os.path.join(plot_path, f'prediction_{img_nr}.png'), dpi=80)
             print('.', end='', flush=True)
             img_nr += 1
 
