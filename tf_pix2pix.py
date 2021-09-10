@@ -423,10 +423,10 @@ class p2p:
                                                     self.discriminator.trainable_variables))
 
         with summary_writer.as_default():
-            tf.summary.scalar('gen_total_loss', gen_total_loss, step=step // 1000)
-            tf.summary.scalar('gen_gan_loss', gen_gan_loss, step=step // 1000)
-            tf.summary.scalar('gen_l1_loss', gen_l1_loss, step=step // 1000)
-            tf.summary.scalar('disc_loss', disc_loss, step=step // 1000)
+            tf.summary.scalar('gen_total_loss', gen_total_loss, step=step // 100)
+            tf.summary.scalar('gen_gan_loss', gen_gan_loss, step=step // 100)
+            tf.summary.scalar('gen_l1_loss', gen_l1_loss, step=step // 100)
+            tf.summary.scalar('disc_loss', disc_loss, step=step // 100)
 
     def generate_images(self, model, test_input, tar, step, output_path):
         '''
