@@ -6,6 +6,7 @@ import os
 import random
 import math
 import json
+import sys
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import matplotlib
@@ -537,6 +538,18 @@ def main():
     with open('config.json') as j:
         config = json.load(j)
 
+    # Directing output
+    os.makedirs(config['OUTPUT_PATH'], exist_ok=True)
+    full_path = config['OUTPUT_PATH'] + '/' + datetime.now().strftime("%Y-%m-%d-%Hh%M")
+    os.makedirs(full_path, exist_ok=True)  # will overwrite folder if model run within same minute
+
+    # Log results
+    log_dir = os.path.join(full_path, 'logs')
+    os.makedirs(log_dir, exist_ok=False)  # dir should not exist, but just in case
+    if config['LOG']:
+        sys.stdout = open(os.path.join(log_dir, "Log.txt"), "w")
+        sys.stderr = sys.stdout
+
     pix2pix = p2p(config)
 
     # Create or read from model checkpoints
@@ -545,10 +558,9 @@ def main():
                                      generator=pix2pix.generator,
                                      discriminator=pix2pix.discriminator)
 
-    # Directing output
-    os.makedirs(config['OUTPUT_PATH'], exist_ok=True)
-    full_path = config['OUTPUT_PATH'] + '/' + datetime.now().strftime("%Y-%m-%d-%Hh%M")
-    os.makedirs(full_path, exist_ok=True)  # will overwrite folder if model run within same minute
+    # Output config to logging dir
+    with open(os.path.join(log_dir, 'config.json'), 'w') as f:
+        json.dump(pix2pix.config, f)
 
     if config['PREDICT']:
         prediction_dataset, _ = pix2pix.image_pipeline(predict=True)
@@ -562,14 +574,8 @@ def main():
         checkpoint_dir = os.path.join(full_path, 'training_checkpoints')
         manager = tf.train.CheckpointManager(checkpoint, checkpoint_dir, max_to_keep=3)
 
-        # Logging
-        log_dir = os.path.join(full_path, 'logs')
-        os.makedirs(log_dir, exist_ok=False) # dir should not exist, but just in case
+        # Summary witer file for tensorboard
         summary_writer = tf.summary.create_file_writer(log_dir)
-
-        # Output config to logging dir
-        with open(os.path.join(log_dir, 'config.json'), 'w') as f:
-            json.dump(pix2pix.config, f)
 
         pix2pix.fit(train_ds=train_dataset,
                     test_ds=test_dataset,
