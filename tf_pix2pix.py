@@ -535,7 +535,7 @@ class p2p:
 
 def main():
 
-    with open('config.json') as j:
+    with open('./scripts/config.json') as j:
         config = json.load(j)
 
     # Directing output
