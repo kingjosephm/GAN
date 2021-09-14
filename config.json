@@ -1,7 +1,7 @@
 {
-  "IMG_PATH": "/Users/josephking/Downloads/subset",
-  "OUTPUT_PATH": "/Users/josephking/Downloads/subset/output",
-  "WEIGHTS_PATH": "/Users/josephking/Downloads/subset/output/2021-09-08-16h47/training_checkpoints",
+  "IMG_PATH": "./data",
+  "OUTPUT_PATH": "./output",
+  "WEIGHTS_PATH": "",
   "LOG": true,
   "IMG_HEIGHT": 256,
   "IMG_WIDTH": 256,
