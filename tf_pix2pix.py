@@ -7,6 +7,7 @@ import random
 import math
 import json
 import sys
+import argparse
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import matplotlib
@@ -31,7 +32,7 @@ else:  # Use the Default Strategy
 class p2p:
     def __init__(self, config):
         self.config = config
-        self.config['GLOBAL_BATCH_SIZE'] = self.config['BATCH_SIZE_PER_REPLICA'] * strategy.num_replicas_in_sync
+        self.config['global_batch_size'] = self.config['batch_size'] * strategy.num_replicas_in_sync
         self.generator = self.Generator()
         self.discriminator = self.Discriminator()
         self.generator_optimizer = self.optimizer()
@@ -67,9 +68,9 @@ class p2p:
         View random input image
         :return:
         '''
-        img_list = [i for i in os.listdir(self.config['IMG_PATH']) if '.png' in i or '.jpeg' in i]
+        img_list = [i for i in os.listdir(self.config['data']) if '.png' in i or '.jpeg' in i]
         random_img = ''.join(random.sample(img_list, 1))
-        input, real = self.load(self.config['IMG_PATH'] + f'/{random_img}')
+        input, real = self.load(self.config['data'] + f'/{random_img}')
         # Casting to int for matplotlib to display the images
         plt.figure()
         plt.imshow(input / 255.0)
@@ -120,10 +121,10 @@ class p2p:
         :return:
         '''
         # Resizing to height+30px by width+30px
-        input_image, real_image = self.resize(input_image, real_image, self.config['IMG_HEIGHT']+30, self.config['IMG_WIDTH']+30)
+        input_image, real_image = self.resize(input_image, real_image, self.config['img_size']+30, self.config['img_size']+30)
 
         # Random cropping back to height, width
-        input_image, real_image = self.random_crop(input_image, real_image,  self.config['IMG_HEIGHT'], self.config['IMG_WIDTH'])
+        input_image, real_image = self.random_crop(input_image, real_image,  self.config['img_size'], self.config['img_size'])
 
         if tf.random.uniform(()) > 0.5:
             # Random mirroring
@@ -150,7 +151,7 @@ class p2p:
         :return:
         '''
         input_image, real_image = self.load(image_file)
-        input_image, real_image = self.resize(input_image, real_image, self.config['IMG_HEIGHT'], self.config['IMG_WIDTH'])
+        input_image, real_image = self.resize(input_image, real_image, self.config['img_size'], self.config['img_size'])
         input_image, real_image = self.normalize(input_image, real_image)
         return input_image, real_image
 
@@ -165,37 +166,37 @@ class p2p:
         print("\nReading in and processing images.\n", flush=True)
 
         # list of images in dir
-        contents = [i for i in os.listdir(self.config['IMG_PATH']) if 'png' in i or 'jpg' in i]
+        contents = [i for i in os.listdir(self.config['data']) if 'png' in i or 'jpg' in i]
 
         if predict:  # all images in `train` used for prediction
-            train = tf.data.Dataset.from_tensor_slices([self.config['IMG_PATH'] + '/' + i for i in contents])
+            train = tf.data.Dataset.from_tensor_slices([self.config['data'] + '/' + i for i in contents])
             train = train.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
-            train = train.shuffle(self.config['BUFFER_SIZE'])
-            train = train.batch(self.config["GLOBAL_BATCH_SIZE"])
+            train = train.shuffle(self.config['buffer_size'])
+            train = train.batch(self.config["global_batch_size"])
             test = None
 
         else:  # if train mode, break into train/test
-            assert(self.config['TEST_SIZE'] > 0), "TEST_SIZE must be strictly > 0!"
-            if self.config['TEST_SIZE'] > 1: # if int test samples
-                test = random.sample(contents, self.config['TEST_SIZE'])
+            assert(self.config['test_examples'] > 0), "TEST_SIZE must be strictly > 0!"
+            if self.config['test_examples'] > 1: # if int test samples
+                test = random.sample(contents, self.config['test_examples'])
             else: # fraction
-                test = random.sample(contents, math.ceil(len(contents) * self.config['TEST_SIZE']))
+                test = random.sample(contents, math.ceil(len(contents) * self.config['test_examples']))
             train = [i for i in contents if i not in test]
 
-            test = tf.data.Dataset.from_tensor_slices([self.config['IMG_PATH'] + '/' + i for i in test])
-            train = tf.data.Dataset.from_tensor_slices([self.config['IMG_PATH'] + '/' + i for i in train])
+            test = tf.data.Dataset.from_tensor_slices([self.config['data'] + '/' + i for i in test])
+            train = tf.data.Dataset.from_tensor_slices([self.config['data'] + '/' + i for i in train])
 
             # process test images
             test = test.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
-            test = test.shuffle(self.config['BUFFER_SIZE'])
-            test = test.batch(self.config["GLOBAL_BATCH_SIZE"]).repeat()
+            test = test.shuffle(self.config['buffer_size'])
+            test = test.batch(self.config["global_batch_size"]).repeat()
             test = test.with_options(options)
             #test = iter(strategy.experimental_distribute_dataset(test))  # creates tf.distribute.DistributedDataset object
 
             # process training images
             train = train.map(self.process_images_train, num_parallel_calls=tf.data.AUTOTUNE)
-            train = train.shuffle(self.config['BUFFER_SIZE'])
-            train = train.batch(self.config["GLOBAL_BATCH_SIZE"]).repeat()
+            train = train.shuffle(self.config['buffer_size'])
+            train = train.batch(self.config["global_batch_size"]).repeat()
             train = train.with_options(options)
             #train = iter(strategy.experimental_distribute_dataset(train))
 
@@ -281,7 +282,7 @@ class p2p:
             ]
 
             initializer = tf.random_normal_initializer(0., 0.02)
-            last = tf.keras.layers.Conv2DTranspose(self.config['OUTPUT_CHANNELS'], 4,
+            last = tf.keras.layers.Conv2DTranspose(self.config['output_channels'], 4,
                                                    strides=2,
                                                    padding='same',
                                                    kernel_initializer=initializer,
@@ -333,7 +334,7 @@ class p2p:
         '''
         with strategy.scope():
 
-            gan_loss = tf.reduce_sum(self.loss_obj(tf.ones_like(disc_generated_output), disc_generated_output))  * (1. / self.config['GLOBAL_BATCH_SIZE'])
+            gan_loss = tf.reduce_sum(self.loss_obj(tf.ones_like(disc_generated_output), disc_generated_output))  * (1. / self.config['global_batch_size'])
 
             # Mean absolute error
             l1_loss = tf.reduce_mean(tf.abs(target - gen_output))
@@ -388,8 +389,8 @@ class p2p:
         '''
         with strategy.scope():
 
-            real_loss = tf.reduce_sum(self.loss_obj(tf.ones_like(disc_real_output), disc_real_output))  * (1. / self.config['GLOBAL_BATCH_SIZE'])
-            generated_loss = tf.reduce_sum(self.loss_obj(tf.zeros_like(disc_generated_output), disc_generated_output)) * (1. / self.config['GLOBAL_BATCH_SIZE'])
+            real_loss = tf.reduce_sum(self.loss_obj(tf.ones_like(disc_real_output), disc_real_output))  * (1. / self.config['global_batch_size'])
+            generated_loss = tf.reduce_sum(self.loss_obj(tf.zeros_like(disc_generated_output), disc_generated_output)) * (1. / self.config['global_batch_size'])
 
             total_disc_loss = real_loss + generated_loss
 
@@ -451,17 +452,19 @@ class p2p:
             plt.imshow(display_list[i] * 0.5 + 0.5)
             plt.axis('off')
 
-        plot_path = os.path.join(output_path, '../', 'test_images') # uses checkpoint manager path as contains strf datetime
+        plot_path = os.path.join(output_path, 'test_images') # uses checkpoint manager path as contains strf datetime
         os.makedirs(plot_path, exist_ok=True) # dir should not exist
         plt.savefig(os.path.join(plot_path, f'step_{step}.png'), dpi=80)
 
-    def fit(self, train_ds, test_ds, steps, summary_writer, checkpoint_manager):
+    def fit(self, train_ds, test_ds, steps, summary_writer, output_path, checkpoint_manager=None, save_weights=True):
         '''
         :param train_ds:
         :param test_ds:
         :param steps:
         :param summary_writer:
+        :param output_path: str, path to output test images across training steps
         :param checkpoint_manager:
+        :param save_weights: bool, whether to save model weights per 5k training steps and at end, along with model checkpoints
         :return:
         '''
 
@@ -486,13 +489,15 @@ class p2p:
             # Save (checkpoint) the model every 5k steps and at end
             # Also saves generated training image
             if (step + 1) % 5000 == 0:
-                checkpoint_manager.save()
-                self.generate_images(self.generator, example_input, example_target, step, checkpoint_manager.directory)
+                if save_weights:
+                    checkpoint_manager.save()
+                self.generate_images(self.generator, example_input, example_target, step, output_path)
 
             # At end save checkpoint and final test image
-            if (step + 1) == self.config['STEPS']:
-                checkpoint_manager.save()
-                self.generate_images(self.generator, example_input, example_target, step, checkpoint_manager.directory)
+            if (step + 1) == self.config['steps']:
+                if save_weights:
+                    checkpoint_manager.save()
+                self.generate_images(self.generator, example_input, example_target, step, output_path)
                 print(f'Cumulative training time at end of {step} steps: {time.time() - start:.2f} sec\n')
 
     def predict(self, pred_ds, output_path):
@@ -531,26 +536,50 @@ class p2p:
             plt.savefig(os.path.join(plot_path, f'prediction_{img_nr}.png'), dpi=80)
             print('.', end='', flush=True)
             img_nr += 1
+        print("\r")
+
+def parse_opt():
+    parser = argparse.ArgumentParser()
+    # Needed in all cases
+    parser.add_argument('--data', type=str, help='path to data', required=True)
+    parser.add_argument('--output', type=str, help='path to output results', required=True)
+    parser.add_argument('--img-size', type=int, default=256, help='image size h,w')
+    parser.add_argument('--batch-size', type=int, default=1, help='batch size per replica')
+    parser.add_argument('--buffer-size', type=int, default=400, help='buffer size')
+    parser.add_argument('--output-channels', type=int, default=3, help='number of color channels to output')
+    # Mode
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--train', action='store_true', help='train model using data')
+    group.add_argument('--predict', action='store_true', help='use pretrained weights to make predictions on data')
+    # Train params
+    group2 = parser.add_mutually_exclusive_group(required='--train' in sys.argv)
+    group2.add_argument('--save-weights', action='store_true', help='save model checkpoints and weights')
+    group2.add_argument('--no-save-weights', action='store_true', help='do not save model checkpoints or weights')
+    parser.add_argument('--test-examples', type=int, default=5, help='number of test examples')
+    parser.add_argument('--steps', type=int, default=10, help='number of training steps to take')
+    # Predict param
+    parser.add_argument('--weights', type=str, help='path to pretrained model weights for prediction',
+                        required='--predict' in sys.argv)
+    opt = parser.parse_args()
+    return opt
 
 
-def main():
-
-    with open('./scripts/config.json') as j:
-        config = json.load(j)
+def main(opt):
+    '''
+    :param opt: argparse.Namespace
+    :return: None
+    '''
 
     # Directing output
-    os.makedirs(config['OUTPUT_PATH'], exist_ok=True)
-    full_path = config['OUTPUT_PATH'] + '/' + datetime.now().strftime("%Y-%m-%d-%Hh%M")
+    os.makedirs(opt.output, exist_ok=True)
+    full_path = opt.output + '/' + datetime.now().strftime("%Y-%m-%d-%Hh%M")
     os.makedirs(full_path, exist_ok=True)  # will overwrite folder if model run within same minute
 
     # Log results
     log_dir = os.path.join(full_path, 'logs')
     os.makedirs(log_dir, exist_ok=False)  # dir should not exist, but just in case
-    if config['LOG']:
-        sys.stdout = open(os.path.join(log_dir, "Log.txt"), "w")
-        sys.stderr = sys.stdout
 
-    pix2pix = p2p(config)
+    pix2pix = p2p(vars(opt))
 
     # Create or read from model checkpoints
     checkpoint = tf.train.Checkpoint(generator_optimizer=pix2pix.generator_optimizer,
@@ -562,29 +591,35 @@ def main():
     with open(os.path.join(log_dir, 'config.json'), 'w') as f:
         json.dump(pix2pix.config, f)
 
-    if config['PREDICT']:
+    if opt.predict: # if predict mode
         prediction_dataset, _ = pix2pix.image_pipeline(predict=True)
-        checkpoint.restore(tf.train.latest_checkpoint(config['WEIGHTS_PATH'])).expect_partial()
+        checkpoint.restore(tf.train.latest_checkpoint(opt.weights)).expect_partial()
         pix2pix.predict(prediction_dataset, full_path)
 
-    else: # if train mode
+    if opt.train: # if train mode
         train_dataset, test_dataset = pix2pix.image_pipeline(predict=False)
 
         # Outputting model checkpoints
-        checkpoint_dir = os.path.join(full_path, 'training_checkpoints')
-        manager = tf.train.CheckpointManager(checkpoint, checkpoint_dir, max_to_keep=3)
+        if opt.save_weights:
+            checkpoint_dir = os.path.join(full_path, 'training_checkpoints')
+            manager = tf.train.CheckpointManager(checkpoint, checkpoint_dir, max_to_keep=3)
+        else:
+            manager = None
 
         # Summary witer file for tensorboard
         summary_writer = tf.summary.create_file_writer(log_dir)
 
         pix2pix.fit(train_ds=train_dataset,
                     test_ds=test_dataset,
-                    steps=pix2pix.config['STEPS'],
+                    steps=pix2pix.config['steps'],
                     summary_writer=summary_writer,
-                    checkpoint_manager=manager)
+                    output_path=full_path,
+                    checkpoint_manager=manager,
+                    save_weights=pix2pix.config['save_weights'])
 
     print("Done.")
 
 if __name__ == '__main__':
 
-   main()
+    opt = parse_opt()
+    main(opt)
