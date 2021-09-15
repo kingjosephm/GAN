@@ -578,6 +578,8 @@ def main(opt):
     # Log results
     log_dir = os.path.join(full_path, 'logs')
     os.makedirs(log_dir, exist_ok=False)  # dir should not exist, but just in case
+    sys.stdout = open(os.path.join(log_dir, "Log.txt"), "w")
+    sys.stderr = sys.stdout
 
     pix2pix = p2p(vars(opt))
 
