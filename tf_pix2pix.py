@@ -324,24 +324,29 @@ class p2p:
             optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)  # TODO - learning rate by batch size, if >GPU
         return optimizer
 
-    def generator_loss(self, disc_generated_output, gen_output, target):
+    def generator_loss(self, disc_generated_output, gen_output, target, input_image):
         '''
         Generator loss
         :param disc_generated_output:
         :param gen_output:
         :param target:
+        :param input_image:
         :return:
         '''
         with strategy.scope():
 
             gan_loss = tf.reduce_sum(self.loss_obj(tf.ones_like(disc_generated_output), disc_generated_output))  * (1. / self.config['global_batch_size'])
 
-            # Mean absolute error
-            l1_loss = tf.reduce_mean(tf.abs(target - gen_output))
+            if self.config['generator_loss']=='l1':
+                # Mean absolute error
+                gan_loss2 = tf.reduce_mean(tf.abs(target - gen_output))
+            else: # ssim loss
+                # SSIM loss, see https://www.tensorflow.org/api_docs/python/tf/image/ssim
+                gan_loss2 = tf.reduce_sum(tf.image.ssim(input_image, target, max_val=255, filter_size=11, filter_sigma=1.5, k1=0.01, k2=0.03))
 
-            total_gen_loss = gan_loss + (100 * l1_loss) # 100=LAMBDA
+            total_gen_loss = gan_loss + (100 * gan_loss2) # 100=LAMBDA
 
-        return total_gen_loss, gan_loss, l1_loss
+        return total_gen_loss, gan_loss, gan_loss2
 
     def Discriminator(self):
         '''
@@ -413,7 +418,7 @@ class p2p:
             disc_real_output = self.discriminator([input_image, target], training=True)
             disc_generated_output = self.discriminator([input_image, gen_output], training=True)
 
-            gen_total_loss, gen_gan_loss, gen_l1_loss = self.generator_loss(disc_generated_output, gen_output, target)
+            gen_total_loss, gen_gan_loss, gen_gan_loss2 = self.generator_loss(disc_generated_output, gen_output, target, input_image)
             disc_loss = self.discriminator_loss(disc_real_output, disc_generated_output)
 
         generator_gradients = gen_tape.gradient(gen_total_loss, self.generator.trainable_variables)
@@ -427,7 +432,7 @@ class p2p:
         with summary_writer.as_default():
             tf.summary.scalar('gen_total_loss', gen_total_loss, step=step // 100)
             tf.summary.scalar('gen_gan_loss', gen_gan_loss, step=step // 100)
-            tf.summary.scalar('gen_l1_loss', gen_l1_loss, step=step // 100)
+            tf.summary.scalar('gen_l1_loss', gen_gan_loss2, step=step // 100)
             tf.summary.scalar('disc_loss', disc_loss, step=step // 100)
 
     def generate_images(self, model, test_input, tar, step, output_path):
@@ -484,7 +489,7 @@ class p2p:
 
             # Training step
             if (step + 1) % 10 == 0:
-                print('.', end='', flush=True)
+                print('.', end='\r', flush=True)
 
             # Save (checkpoint) the model every 5k steps and at end
             # Also saves generated training image
@@ -548,6 +553,7 @@ def parse_opt():
     parser.add_argument('--buffer-size', type=int, default=400, help='buffer size')
     parser.add_argument('--output-channels', type=int, default=3, help='number of color channels to output')
     parser.add_argument('--no-log', action='store_true', help='turn off script logging, e.g. for CLI debugging')
+    parser.add_argument('--generator-loss', type=str, default='l1', choices=['l1', 'ssim'], help='combined generator loss function')
     # Mode
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--train', action='store_true', help='train model using data')
@@ -578,7 +584,7 @@ def main(opt):
 
     # Log results
     log_dir = os.path.join(full_path, 'logs')
-    os.makedirs(log_dir, exist_ok=False)  # dir should not exist, but just in case
+    os.makedirs(log_dir, exist_ok=True)
     if not opt.no_log:
         sys.stdout = open(os.path.join(log_dir, "Log.txt"), "w")
         sys.stderr = sys.stdout
