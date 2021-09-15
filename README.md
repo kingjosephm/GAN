@@ -1,68 +1,42 @@
 # Introduction
 TODO
 
+# Pipeline
+The shell script `driver.sh` automates copying the latest development scripts from the local machine onto the GPU server. It prompts user's credential once, saving this as a variable. It also prompts user's password twice; the first time is to transfer the scripts onto the GPU server, and the second time is to ssh into the server itself. Once logged into the server the user should execute the docker commands (below) to run the scripts.
+
 # Data
-The data are located on the GPU server under /home/kingj in two directories: `train` and `test`. Their compressed equivalents can also be found in this same parent directory.
+The training and test image data are located on the GPU server under `/home/kingj/train` and `/home/kingj/test`. Their compressed equivalents can also be found in this same parent directory.
 
-# Docker container
+# Docker
+### Training images stored in volume named `MERGEN_GAN_train_data`
+These images were migrated into this volume via:
 
-### Launch an interactive container for the first time
+    docker volume create --name MERGEN_GAN_train_data \
+      --opt type=none \
+      --opt device=/home/kingj/train \
+      --opt o=bind
+
+### Output stored in volume named `MERGEN_GAN_output`
+This was instantiated as an empty volume via:
+
+    docker volume create --name MERGEN_GAN_output
+
+### Start an interactive container paired with these volumes
 
     docker run -it \
-    --name foo \
-    --mount type=bind,source=/home/kingj/train,target=/data \
-    --mount type=bind,source=home/kingj/scripts,target=/scripts \
-    --gpus 1 \
-    tensorflow/tensorflow:latest-gpu /bin/bash
+        --name <name> \
+        --mount type=bind,source=source=home/kingj/scripts,target=/scripts \
+        --mount source=MERGEN_train_data,target=/data \
+        --mount source=MERGEN_output,target=/output \
+        --gpus 1 \
+        tensorflow/tensorflow:latest-gpu /bin/bash
 
-Because we want to mount both data and scripts we call `--mount` twice. Importantly, the parameters `-it` make the session interactive. `tensorflow/tensorflow:latest-gpu` refers to the container image, which is downloaded from DockerHub if not already present on the remote host. ***Note - within the interactive session Linux commands apply.*** Depending on your machine you may need to increase memory allocation to the container via, e.g., `--memory="3g"`.
+Because we want to mount both data and scripts volumes we call `--mount` twice. Importantly, the parameters `-it` make the session interactive. `tensorflow/tensorflow:latest-gpu` refers to the container image, which is downloaded from DockerHub if not already present on the remote host.
 
-### Launch a *detached* container for the first time that calls a script
+### Run GAN model
+Once inside the running container, execute the shell script `container_driver.sh` via:
 
-    docker run -d \
-    --name foo \
-    --mount type=bind,source=/home/kingj/train,target=/data \
-    --mount type=bind,source=home/kingj/scripts,target=/scripts \
-    --gpus 1 \
-    tensorflow/tensorflow:latest-gpu python3 ./scripts/tf_pix2pix.py
+    sh ./scripts/container_driver.sh
 
-Note - if there's an error in the provided script, there is no way to interact with the container as it will exit first due to the error in the script.
+Output from a given run will be stored in the container under `./output/<YYYY-MM-DD-HHhmm>`.
 
-### Restart a previously instantiated, but stopped container in interactive mode
-
-    docker start -i <container_ID or container_name>
-
-### Reattach terminal to running container
-
-    docker attach <container_ID or container_name>
-
-### Detach termal and keep container running
-
-    CTRL-p CTRL-q  # key sequence
-
-
-### Other Docker commands
-    $ docker ps  # lists running docker containers
-    $ docker ps -a  # view all containers, both running and stopped
-    $ docker container rm <container_name>  # deletes a container *CAUTION!*
-    $ docker image ls  # view all docker images on host machine
-    $ docker stats <container_name> --no-stream  # no-stream option presents just the current stats
-
-## Linux commands
-### Move data onto server <br>
-    $ scp file1 file2 <credentials>:<remote_dir> # Do this before ssh remote in
-
-### Unzip files
-    $ unzip myzip.zip
-    $ tar -xf train.tar.xz # unzips tar file
-
-### Read text file (e.g. log.txt) in container
-
-    $ input="/path/to/txt/file"
-    $ while IFS= read -r line
-    do
-      echo "$line"
-    done < "$input"
-
-### Exit environment (including Docker interactive, which stops container)
-    $ exit
