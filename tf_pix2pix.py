@@ -547,6 +547,7 @@ def parse_opt():
     parser.add_argument('--batch-size', type=int, default=1, help='batch size per replica')
     parser.add_argument('--buffer-size', type=int, default=400, help='buffer size')
     parser.add_argument('--output-channels', type=int, default=3, help='number of color channels to output')
+    parser.add_argument('--no-log', action='store_true', help='turn off script logging, e.g. for CLI debugging')
     # Mode
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--train', action='store_true', help='train model using data')
@@ -578,8 +579,9 @@ def main(opt):
     # Log results
     log_dir = os.path.join(full_path, 'logs')
     os.makedirs(log_dir, exist_ok=False)  # dir should not exist, but just in case
-    sys.stdout = open(os.path.join(log_dir, "Log.txt"), "w")
-    sys.stderr = sys.stdout
+    if not opt.no_log:
+        sys.stdout = open(os.path.join(log_dir, "Log.txt"), "w")
+        sys.stderr = sys.stdout
 
     pix2pix = p2p(vars(opt))
 
