@@ -29,7 +29,7 @@ else:  # Use the Default Strategy
     strategy = tf.distribute.OneDeviceStrategy('/CPU:0')  # use for debugging
 
 
-class p2p:
+class Pix2Pix:
     def __init__(self, config):
         self.config = config
         self.config['global_batch_size'] = self.config['batch_size'] * strategy.num_replicas_in_sync
@@ -589,25 +589,25 @@ def main(opt):
         sys.stdout = open(os.path.join(log_dir, "Log.txt"), "w")
         sys.stderr = sys.stdout
 
-    pix2pix = p2p(vars(opt))
+    p2p = Pix2Pix(vars(opt))
 
     # Create or read from model checkpoints
-    checkpoint = tf.train.Checkpoint(generator_optimizer=pix2pix.generator_optimizer,
-                                     discriminator_optimizer=pix2pix.discriminator_optimizer,
-                                     generator=pix2pix.generator,
-                                     discriminator=pix2pix.discriminator)
+    checkpoint = tf.train.Checkpoint(generator_optimizer=p2p.generator_optimizer,
+                                     discriminator_optimizer=p2p.discriminator_optimizer,
+                                     generator=p2p.generator,
+                                     discriminator=p2p.discriminator)
 
     # Output config to logging dir
     with open(os.path.join(log_dir, 'config.json'), 'w') as f:
-        json.dump(pix2pix.config, f)
+        json.dump(p2p.config, f)
 
     if opt.predict: # if predict mode
-        prediction_dataset, _ = pix2pix.image_pipeline(predict=True)
+        prediction_dataset, _ = p2p.image_pipeline(predict=True)
         checkpoint.restore(tf.train.latest_checkpoint(opt.weights)).expect_partial()
-        pix2pix.predict(prediction_dataset, full_path)
+        p2p.predict(prediction_dataset, full_path)
 
     if opt.train: # if train mode
-        train_dataset, test_dataset = pix2pix.image_pipeline(predict=False)
+        train_dataset, test_dataset = p2p.image_pipeline(predict=False)
 
         # Outputting model checkpoints
         if opt.save_weights:
@@ -619,13 +619,13 @@ def main(opt):
         # Summary witer file for tensorboard
         summary_writer = tf.summary.create_file_writer(log_dir)
 
-        pix2pix.fit(train_ds=train_dataset,
+        p2p.fit(train_ds=train_dataset,
                     test_ds=test_dataset,
-                    steps=pix2pix.config['steps'],
+                    steps=p2p.config['steps'],
                     summary_writer=summary_writer,
                     output_path=full_path,
                     checkpoint_manager=manager,
-                    save_weights=pix2pix.config['save_weights'])
+                    save_weights=p2p.config['save_weights'])
 
     print("Done.")
 
