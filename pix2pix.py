@@ -1,10 +1,6 @@
-# Author: Joe King
-# Pix2Pix in Tensorflow, credit: https://www.tensorflow.org/tutorials/generative/pix2pix
-
 import time
 import os
 import random
-import math
 import json
 import sys
 import argparse
@@ -14,42 +10,30 @@ import matplotlib
 matplotlib.use('Agg') # suppresses plot
 from IPython import display
 from datetime import datetime
+from base_gan import GAN
 
-# Disable TensorFlow AUTO sharding policy warning
-options = tf.data.Options()
-options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+"""
+    Pix2Pix in Tensorflow
+    Credit:
+        https://www.tensorflow.org/tutorials/generative/pix2pix
+        https://github.com/tensorflow/examples/blob/d97aa060cb00ae2299b4b32591b8489df38e85ef/tensorflow_examples/models/pix2pix/pix2pix.py
 
+"""
 
-# Configure distributed training across GPUs, if available
-print("Num GPUs Available: ", len(tf.config.list_physical_devices("GPU")))
-if tf.config.list_physical_devices('GPU'):
-    strategy = tf.distribute.MirroredStrategy(devices=["/gpu:0"])
-else:  # Use the Default Strategy
-    #strategy = tf.distribute.get_strategy()  # default distribution strategy
-    strategy = tf.distribute.OneDeviceStrategy('/CPU:0')  # use for debugging
-
-
-class Pix2Pix:
+class Pix2Pix(GAN):
     def __init__(self, config):
-        self.config = config
-        self.config['global_batch_size'] = self.config['batch_size'] * strategy.num_replicas_in_sync
+        super().__init__(config)
         self.generator = self.Generator()
-        self.discriminator = self.Discriminator()
-        self.generator_optimizer = self.optimizer()
-        self.discriminator_optimizer = self.optimizer()
-        self.loss_obj = self.loss_object()
+        self.discriminator = super().Discriminator(target=True)
+        self.generator_optimizer = super().optimizer()
+        self.discriminator_optimizer = super().optimizer()
 
-    def load(self, image_file):
-        '''
+    def split_img(self, image_file):
+        """
         :param image_file:
         :return:
-        '''
-        # Read and decode an image file to a uint8 tensor
-        image = tf.io.read_file(image_file)
-        try:
-            image = tf.image.decode_png(image)
-        except:
-            image = tf.image.decode_jpeg(image)
+        """
+        image = super().load(image_file)
 
         # Split each image tensor into two tensors:
         w = tf.shape(image)[1]
@@ -63,65 +47,29 @@ class Pix2Pix:
 
         return input_image, real_image
 
-    def show_img(self):
-        '''
-        View random input image
-        :return:
-        '''
-        img_list = [i for i in os.listdir(self.config['data']) if '.png' in i or '.jpeg' in i]
-        random_img = ''.join(random.sample(img_list, 1))
-        input, real = self.load(self.config['data'] + f'/{random_img}')
-        # Casting to int for matplotlib to display the images
-        plt.figure()
-        plt.imshow(input / 255.0)
-        plt.figure()
-        plt.imshow(real / 255.0)
-
-    def resize(self, input_image, real_image, height, width):
-        '''
-        :param input_image:
-        :param real_image:
-        :param height:
-        :param width:
-        :return:
-        '''
-        input_image = tf.image.resize(input_image, [height, width], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
-        real_image = tf.image.resize(real_image, [height, width], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
-        return input_image, real_image
-
     def random_crop(self, input_image, real_image, height, width):
-        '''
+        """
         :param input_image:
         :param real_image:
         :param height:
         :param width:
         :return:
-        '''
+        """
         stacked_image = tf.stack([input_image, real_image], axis=0)
         cropped_image = tf.image.random_crop(
             stacked_image, size=[2, height, width, 3])
         return cropped_image[0], cropped_image[1]
 
-    # Normalizing the images to [-1, 1]
-    def normalize(self, input_image, real_image):
-        '''
-        :param input_image:
-        :param real_image:
-        :return:
-        '''
-        input_image = (input_image / 127.5) - 1
-        real_image = (real_image / 127.5) - 1
-        return input_image, real_image
-
     @tf.function()
     def random_jitter(self, input_image, real_image):
-        '''
+        """
         :param input_image:
         :param real_image:
         :return:
-        '''
+        """
         # Resizing to height+30px by width+30px
-        input_image, real_image = self.resize(input_image, real_image, self.config['img_size']+30, self.config['img_size']+30)
+        input_image = super().resize(input_image, self.config['img_size']+30, self.config['img_size']+30)
+        real_image = super().resize(real_image, self.config['img_size']+30, self.config['img_size']+30)
 
         # Random cropping back to height, width
         input_image, real_image = self.random_crop(input_image, real_image,  self.config['img_size'], self.config['img_size'])
@@ -134,41 +82,45 @@ class Pix2Pix:
         return input_image, real_image
 
     def process_images_train(self, image_file):
-        '''
+        """
         Loads individual image, applies random jitter, normalizes image. Processing for train images only.
         :param image_file:
         :return:
-        '''
-        input_image, real_image = self.load(image_file)
+        """
+        input_image, real_image = self.split_img(image_file)
         input_image, real_image = self.random_jitter(input_image, real_image)
-        input_image, real_image = self.normalize(input_image, real_image)
+        input_image = super().normalize(input_image)
+        real_image = super().normalize(real_image)
         return input_image, real_image
 
     def process_images_pred(self, image_file):
-        '''
+        """
         Loads individual image, resizes, normalizes image. Processing for test/pred images only.
         :param image_file:
         :return:
-        '''
-        input_image, real_image = self.load(image_file)
-        input_image, real_image = self.resize(input_image, real_image, self.config['img_size'], self.config['img_size'])
-        input_image, real_image = self.normalize(input_image, real_image)
+        """
+        input_image, real_image = self.split_img(image_file)
+        input_image = super().resize(input_image, self.config['img_size'], self.config['img_size'])
+        real_image = super().resize(real_image, self.config['img_size'], self.config['img_size'])
+        input_image = super().normalize(input_image)
+        real_image = super().normalize(real_image)
         return input_image, real_image
 
     def image_pipeline(self, predict=False):
-        '''
+        """
         :param predict: bool, whether or not to create train/test split. False treats all images as valid for prediction.
         :return:
             train - tf.distribute.DistributedDataset object
             test - tf.distribute.DistributedDataset (or None if predict=True)
-        '''
+        """
 
         print("\nReading in and processing images.\n", flush=True)
 
         # list of images in dir
         contents = [i for i in os.listdir(self.config['data']) if 'png' in i or 'jpg' in i]
 
-        if predict:  # all images in `train` used for prediction
+        if predict:  # all images in `train` used for prediction; they're not training images, only kept for consistency
+            assert(contents), "No JPEG or PNG images found in data directory!"
             train = tf.data.Dataset.from_tensor_slices([self.config['data'] + '/' + i for i in contents])
             train = train.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
             train = train.shuffle(self.config['buffer_size'])
@@ -176,11 +128,11 @@ class Pix2Pix:
             test = None
 
         else:  # if train mode, break into train/test
-            assert(self.config['test_examples'] > 0), "TEST_SIZE must be strictly > 0!"
-            if self.config['test_examples'] > 1: # if int test samples
-                test = random.sample(contents, self.config['test_examples'])
-            else: # fraction
-                test = random.sample(contents, math.ceil(len(contents) * self.config['test_examples']))
+            assert(len(contents) >=2), f"Insufficient number of training examples in data directory! " \
+                                          f"At least 2 are required, but found {len(contents)}!"
+
+            # Randomly select 1 image to view training progress
+            test = random.sample(contents, 1)
             train = [i for i in contents if i not in test]
 
             test = tf.data.Dataset.from_tensor_slices([self.config['data'] + '/' + i for i in test])
@@ -190,95 +142,45 @@ class Pix2Pix:
             test = test.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
             test = test.shuffle(self.config['buffer_size'])
             test = test.batch(self.config["global_batch_size"]).repeat()
-            test = test.with_options(options)
-            #test = iter(strategy.experimental_distribute_dataset(test))  # creates tf.distribute.DistributedDataset object
+            test = test.with_options(self.options)
 
             # process training images
             train = train.map(self.process_images_train, num_parallel_calls=tf.data.AUTOTUNE)
             train = train.shuffle(self.config['buffer_size'])
             train = train.batch(self.config["global_batch_size"]).repeat()
-            train = train.with_options(options)
-            #train = iter(strategy.experimental_distribute_dataset(train))
+            train = train.with_options(self.options)
 
         return train, test
 
-    def downsample(self, filters, size, apply_batchnorm=True):
-        '''
-        Builds encoder portion of pix2pix model.
-        :param filters:
-        :param size:
-        :param apply_batchnorm:
-        :return:
-        '''
-        initializer = tf.random_normal_initializer(0., 0.02)
-
-        result = tf.keras.Sequential()
-        result.add(
-            tf.keras.layers.Conv2D(filters, size, strides=2, padding='same',
-                                   kernel_initializer=initializer, use_bias=False))
-
-        if apply_batchnorm:
-            result.add(tf.keras.layers.BatchNormalization())
-
-        result.add(tf.keras.layers.LeakyReLU())
-
-        return result
-
-    def upsample(self, filters, size, apply_dropout=False):
-        '''
-        Builds decoder portion of pix2pix model.
-        :param filters:
-        :param size:
-        :param apply_dropout:
-        :return:
-        '''
-        initializer = tf.random_normal_initializer(0., 0.02)
-
-        result = tf.keras.Sequential()
-        result.add(
-            tf.keras.layers.Conv2DTranspose(filters, size, strides=2,
-                                            padding='same',
-                                            kernel_initializer=initializer,
-                                            use_bias=False))
-
-        result.add(tf.keras.layers.BatchNormalization())
-
-        if apply_dropout:
-            result.add(tf.keras.layers.Dropout(0.5))
-
-        result.add(tf.keras.layers.ReLU())
-
-        return result
-
     def Generator(self):
-        '''
+        """
         Define generator by combining down- and upsamplers.
         :return: tf.keras Model class
-        '''
+        """
 
-        with strategy.scope():
+        with self.strategy.scope():
 
             inputs = tf.keras.layers.Input(shape=[256, 256, 3])
 
             down_stack = [
-                self.downsample(64, 4, apply_batchnorm=False),  # (batch_size, 128, 128, 64)
-                self.downsample(128, 4),  # (batch_size, 64, 64, 128)
-                self.downsample(256, 4),  # (batch_size, 32, 32, 256)
-                self.downsample(512, 4),  # (batch_size, 16, 16, 512)
-                self.downsample(512, 4),  # (batch_size, 8, 8, 512)
-                self.downsample(512, 4),  # (batch_size, 4, 4, 512)
-                self.downsample(512, 4),  # (batch_size, 2, 2, 512)
-                self.downsample(512, 4),  # (batch_size, 1, 1, 512)
+                super().downsample(64, 4, apply_norm=False),  # (batch_size, 128, 128, 64)
+                super().downsample(128, 4),  # (batch_size, 64, 64, 128)
+                super().downsample(256, 4),  # (batch_size, 32, 32, 256)
+                super().downsample(512, 4),  # (batch_size, 16, 16, 512)
+                super().downsample(512, 4),  # (batch_size, 8, 8, 512)
+                super().downsample(512, 4),  # (batch_size, 4, 4, 512)
+                super().downsample(512, 4),  # (batch_size, 2, 2, 512)
+                super().downsample(512, 4),  # (batch_size, 1, 1, 512)
             ]
 
             up_stack = [
-                self.upsample(512, 4, apply_dropout=True),  # (batch_size, 2, 2, 1024)
-                self.upsample(512, 4, apply_dropout=True),  # (batch_size, 4, 4, 1024)
-                self.upsample(512, 4, apply_dropout=True),  # (batch_size, 8, 8, 1024)
-                self.upsample(512, 4),  # (batch_size, 16, 16, 1024)
-                self.upsample(256, 4),  # (batch_size, 32, 32, 512)
-                self.upsample(128, 4),  # (batch_size, 64, 64, 256)
-                self.upsample(64, 4),  # (batch_size, 128, 128, 128)
+                super().upsample(512, 4, apply_dropout=True),  # (batch_size, 2, 2, 1024)
+                super().upsample(512, 4, apply_dropout=True),  # (batch_size, 4, 4, 1024)
+                super().upsample(512, 4, apply_dropout=True),  # (batch_size, 8, 8, 1024)
+                super().upsample(512, 4),  # (batch_size, 16, 16, 1024)
+                super().upsample(256, 4),  # (batch_size, 32, 32, 512)
+                super().upsample(128, 4),  # (batch_size, 64, 64, 256)
+                super().upsample(64, 4),  # (batch_size, 128, 128, 128)
             ]
 
             initializer = tf.random_normal_initializer(0., 0.02)
@@ -309,31 +211,16 @@ class Pix2Pix:
 
         return model
 
-    def loss_object(self):
-        '''
-        :return:
-        '''
-        return tf.keras.losses.BinaryCrossentropy(from_logits=True, reduction=tf.keras.losses.Reduction.NONE)
-
-    def optimizer(self):
-        '''
-        Optimizer for both generator and discriminators
-        :return: tf.keras Adam optimizer
-        '''
-        with strategy.scope():
-            optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)  # TODO - learning rate by batch size, if >GPU
-        return optimizer
-
     def generator_loss(self, disc_generated_output, gen_output, target, input_image):
-        '''
+        """
         Generator loss
         :param disc_generated_output:
         :param gen_output:
         :param target:
         :param input_image:
         :return:
-        '''
-        with strategy.scope():
+        """
+        with self.strategy.scope():
 
             gan_loss = tf.reduce_sum(self.loss_obj(tf.ones_like(disc_generated_output), disc_generated_output))  * (1. / self.config['global_batch_size'])
 
@@ -348,68 +235,15 @@ class Pix2Pix:
 
         return total_gen_loss, gan_loss, gan_loss2
 
-    def Discriminator(self):
-        '''
-        Discrimator of pix2pix is a convolutional PatchGAN classifier - it tries to classify if each image patch
-        is real or not real
-        :return:
-        '''
-
-        with strategy.scope():
-            initializer = tf.random_normal_initializer(0., 0.02)
-
-            inp = tf.keras.layers.Input(shape=[256, 256, 3], name='input_image')
-            tar = tf.keras.layers.Input(shape=[256, 256, 3], name='target_image')
-
-            x = tf.keras.layers.concatenate([inp, tar])  # (batch_size, 256, 256, channels*2)
-
-            down1 = self.downsample(64, 4, False)(x)  # (batch_size, 128, 128, 64)
-            down2 = self.downsample(128, 4)(down1)  # (batch_size, 64, 64, 128)
-            down3 = self.downsample(256, 4)(down2)  # (batch_size, 32, 32, 256)
-
-            zero_pad1 = tf.keras.layers.ZeroPadding2D()(down3)  # (batch_size, 34, 34, 256)
-            conv = tf.keras.layers.Conv2D(512, 4, strides=1,
-                                          kernel_initializer=initializer,
-                                          use_bias=False)(zero_pad1)  # (batch_size, 31, 31, 512)
-
-            batchnorm1 = tf.keras.layers.BatchNormalization()(conv)
-
-            leaky_relu = tf.keras.layers.LeakyReLU()(batchnorm1)
-
-            zero_pad2 = tf.keras.layers.ZeroPadding2D()(leaky_relu)  # (batch_size, 33, 33, 512)
-
-            last = tf.keras.layers.Conv2D(1, 4, strides=1,
-                                          kernel_initializer=initializer)(zero_pad2)  # (batch_size, 30, 30, 1)
-
-            model = tf.keras.Model(inputs=[inp, tar], outputs=last)
-
-        return model
-
-    def discriminator_loss(self, disc_real_output, disc_generated_output):
-        '''
-        Discriminator loss.
-        :param disc_real_output:
-        :param disc_generated_output:
-        :return:
-        '''
-        with strategy.scope():
-
-            real_loss = tf.reduce_sum(self.loss_obj(tf.ones_like(disc_real_output), disc_real_output))  * (1. / self.config['global_batch_size'])
-            generated_loss = tf.reduce_sum(self.loss_obj(tf.zeros_like(disc_generated_output), disc_generated_output)) * (1. / self.config['global_batch_size'])
-
-            total_disc_loss = real_loss + generated_loss
-
-        return total_disc_loss
-
     @tf.function
     def train_step(self, input_image, target, step, summary_writer):
-        '''
+        """
         :param input_image:
         :param target:
         :param step:
         :param summary_writer:
         :return:
-        '''
+        """
 
         # TODO - consider different numbers of generator or discriminator steps each time
         with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
@@ -436,14 +270,14 @@ class Pix2Pix:
             tf.summary.scalar('disc_loss', disc_loss, step=step // 100)
 
     def generate_images(self, model, test_input, tar, step, output_path):
-        '''
+        """
         :param model:
         :param test_input:
         :param tar:
         :param step:
         :param output_path:
         :return:
-        '''
+        """
         prediction = model(test_input, training=True)
         plt.figure(figsize=(15, 6))
 
@@ -457,12 +291,12 @@ class Pix2Pix:
             plt.imshow(display_list[i] * 0.5 + 0.5)
             plt.axis('off')
 
-        plot_path = os.path.join(output_path, 'test_images') # uses checkpoint manager path as contains strf datetime
+        plot_path = os.path.join(output_path, 'test_images')
         os.makedirs(plot_path, exist_ok=True) # dir should not exist
         plt.savefig(os.path.join(plot_path, f'step_{step}.png'), dpi=80)
 
     def fit(self, train_ds, test_ds, steps, summary_writer, output_path, checkpoint_manager=None, save_weights=True):
-        '''
+        """
         :param train_ds:
         :param test_ds:
         :param steps:
@@ -471,7 +305,7 @@ class Pix2Pix:
         :param checkpoint_manager:
         :param save_weights: bool, whether to save model weights per 5k training steps and at end, along with model checkpoints
         :return:
-        '''
+        """
 
         print("\nTraining...\n", flush=True)
 
@@ -506,11 +340,11 @@ class Pix2Pix:
                 print(f'Cumulative training time at end of {step} steps: {time.time() - start:.2f} sec\n')
 
     def predict(self, pred_ds, output_path):
-        '''
+        """
         :param pred_ds:
         :param output_path:
         :return:
-        '''
+        """
         print("\nRendering images using pretrained weights\n")
 
         img_nr = 0
@@ -562,20 +396,18 @@ def parse_opt():
     group2 = parser.add_mutually_exclusive_group(required='--train' in sys.argv)
     group2.add_argument('--save-weights', action='store_true', help='save model checkpoints and weights')
     group2.add_argument('--no-save-weights', action='store_true', help='do not save model checkpoints or weights')
-    parser.add_argument('--test-examples', type=int, default=5, help='number of test examples')
     parser.add_argument('--steps', type=int, default=10, help='number of training steps to take')
     # Predict param
     parser.add_argument('--weights', type=str, help='path to pretrained model weights for prediction',
                         required='--predict' in sys.argv)
-    opt = parser.parse_args()
-    return opt
+    return parser.parse_args()
 
 
 def main(opt):
-    '''
+    """
     :param opt: argparse.Namespace
     :return: None
-    '''
+    """
 
     # Directing output
     os.makedirs(opt.output, exist_ok=True)
@@ -620,12 +452,12 @@ def main(opt):
         summary_writer = tf.summary.create_file_writer(log_dir)
 
         p2p.fit(train_ds=train_dataset,
-                    test_ds=test_dataset,
-                    steps=p2p.config['steps'],
-                    summary_writer=summary_writer,
-                    output_path=full_path,
-                    checkpoint_manager=manager,
-                    save_weights=p2p.config['save_weights'])
+                test_ds=test_dataset,
+                steps=p2p.config['steps'],
+                summary_writer=summary_writer,
+                output_path=full_path,
+                checkpoint_manager=manager,
+                save_weights=p2p.config['save_weights'])
 
     print("Done.")
 
