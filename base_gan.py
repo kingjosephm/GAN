@@ -38,9 +38,10 @@ class GAN(ABC):
         self.options = options
         self.loss_obj = self.loss_object()
 
-    def load(self, image_file):
+    def load(self, image_file, resize=False):
         """
         :param image_file:
+        :param resize: bool, whether to resize image on read in to ensure consistently-sized images in tensor
         :return:
         """
         # Read and decode an image file to a uint8 tensor
@@ -49,6 +50,12 @@ class GAN(ABC):
             image = tf.image.decode_png(image)
         except:
             image = tf.image.decode_jpeg(image)
+
+        # Cast to float32 tensors
+        image = tf.cast(image, tf.float32)
+
+        if resize:
+            image = self.resize(image, self.config['img_size'], self.config['img_size'])
         return image
 
     def show_img(self):
@@ -220,11 +227,11 @@ class GAN(ABC):
         return optimizer
 
     @abstractmethod
-    def random_crop(self, *params):
+    def random_crop(self, *args, **kwargs):
         return
 
     @abstractmethod
-    def random_jitter(self, *params):
+    def random_jitter(self, *args, **kwargs):
         return
 
     @abstractmethod
@@ -240,25 +247,25 @@ class GAN(ABC):
         return
 
     @abstractmethod
-    def generator_loss(self, *params):
+    def generator_loss(self, *args, **kwargs):
         return
 
     @abstractmethod
-    def Generator(self, *params):
+    def Generator(self, *args, **kwargs):
         return
 
     @abstractmethod
-    def generate_images(self, *params):
+    def generate_images(self, *args, **kwargs):
         return
 
     @abstractmethod
-    def train_step(self, *params):
+    def train_step(self, *args, **kwargs):
         return
 
     @abstractmethod
-    def fit(self, *params):
+    def fit(self, *args, **kwargs):
         return
 
     @abstractmethod
-    def predict(self, *params):
+    def predict(self, *args, **kwargs):
         return
