@@ -41,10 +41,6 @@ class Pix2Pix(GAN):
         input_image = image[:, w:, :]
         real_image = image[:, :w, :]
 
-        # Convert both images to float32 tensors
-        input_image = tf.cast(input_image, tf.float32)
-        real_image = tf.cast(real_image, tf.float32)
-
         return input_image, real_image
 
     def random_crop(self, input_image, real_image, height, width):
