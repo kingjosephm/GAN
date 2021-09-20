@@ -230,7 +230,7 @@ class Pix2Pix(GAN):
                 gan_loss2 = tf.reduce_mean(tf.abs(target - gen_output))
             else: # ssim loss
                 # SSIM loss, see https://www.tensorflow.org/api_docs/python/tf/image/ssim
-                gan_loss2 = tf.reduce_sum(tf.image.ssim(input_image, target, max_val=255, filter_size=11, filter_sigma=1.5, k1=0.01, k2=0.03))
+                gan_loss2 = (1 - tf.reduce_sum(tf.image.ssim(input_image, target, max_val=255, filter_size=11, filter_sigma=1.5, k1=0.01, k2=0.03)))
 
             total_gen_loss = gan_loss + (100 * gan_loss2) # 100=LAMBDA
 
