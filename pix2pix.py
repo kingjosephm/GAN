@@ -295,6 +295,7 @@ class Pix2Pix(GAN):
         plot_path = os.path.join(output_path, 'test_images')
         os.makedirs(plot_path, exist_ok=True) # dir should not exist
         plt.savefig(os.path.join(plot_path, f'step_{step}.png'), dpi=80)
+        plt.close()
 
     def fit(self, train_ds, test_ds, steps, summary_writer, output_path, checkpoint_manager=None, save_weights=True):
         """
@@ -321,10 +322,6 @@ class Pix2Pix(GAN):
                 print(f'\nCumulative training time: {time.time() - start:.2f} sec\n')
 
             self.train_step(input_image, target, step, summary_writer)
-
-            # Training step
-            if (step + 1) % 10 == 0:
-                print('.', end='\r', flush=True)
 
             # Save (checkpoint) the model every 5k steps and at end
             # Also saves generated training image
@@ -374,9 +371,8 @@ class Pix2Pix(GAN):
             plt.imshow(prediction[0] * 0.5 + 0.5)
             plt.axis('off')
             plt.savefig(os.path.join(plot_path, f'prediction_{img_nr}.png'), dpi=80)
-            print('.', end='', flush=True)
+            plt.close()
             img_nr += 1
-        print("\r")
 
 def parse_opt():
     parser = argparse.ArgumentParser()

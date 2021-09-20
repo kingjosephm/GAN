@@ -253,6 +253,7 @@ class CycleGAN(GAN):
             plot_path = output_path
         os.makedirs(plot_path, exist_ok=True) # dir should not exist
         plt.savefig(os.path.join(plot_path, f"{img_file_prefix}_{image_nr}.png"), dpi=80)
+        plt.close()
 
     @tf.function
     def train_step(self, real_x, real_y, epoch, summary_writer):
@@ -343,8 +344,6 @@ class CycleGAN(GAN):
             n = 0
             for image_x, image_y in tf.data.Dataset.zip((train_X, train_Y)):
                 self.train_step(image_x, image_y, epoch, summary_writer)
-                if n % 10 == 0:
-                    print('.', end='', flush=True)
                 n += 1
 
             display.clear_output(wait=True)
@@ -382,9 +381,8 @@ class CycleGAN(GAN):
             plt.imshow(prediction[0] * 0.5 + 0.5)
             plt.axis('off')
             plt.savefig(os.path.join(output_path, f'prediction_{img_nr}.png'), dpi=80)
-            print('.', end='', flush=True)
+            plt.close()
             img_nr += 1
-        print("\r")
 
 def parse_opt():
     parser = argparse.ArgumentParser()
