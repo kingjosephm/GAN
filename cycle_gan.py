@@ -85,8 +85,8 @@ class CycleGAN(GAN):
         """
         :param predict: bool, whether or not to create train/test split. False treats all images as valid for prediction.
         :return:
-            train - tf.distribute.DistributedDataset object
-            test - tf.distribute.DistributedDataset (or None if predict=True)
+            train - tf.python.data.ops.dataset_ops.BatchDataset
+            test - tf.python.data.ops.dataset_ops.BatchDataset (or None if predict=True)
         """
 
         print("\nReading in and processing images.\n", flush=True)
@@ -229,12 +229,13 @@ class CycleGAN(GAN):
             LAMBDA = 10
             return LAMBDA * 0.5 * loss
 
-    def generate_images(self, model, test_input, epoch, output_path):
+    def generate_images(self, model, test_input, image_nr, output_path, img_file_prefix='epoch'):
         """
         :param model:
         :param test_input:
-        :param epoch:
+        :param image_nr: int, either epoch number (train only) of image identifier number (predict mode)
         :param output_path:
+        :param img_file_prefix: str, output image file suffix, whether 'epoch' (train) or 'img' (predict)
         :return:
         """
         prediction = model(test_input, training=True)
@@ -250,9 +251,12 @@ class CycleGAN(GAN):
             plt.imshow(display_list[i] * 0.5 + 0.5)
             plt.axis('off')
 
-        plot_path = os.path.join(output_path, 'test_images')
+        if img_file_prefix == 'epoch': # train mode, make subdir
+            plot_path = os.path.join(output_path, 'test_images')
+        else: # predict mode, don't make subdir
+            plot_path = output_path
         os.makedirs(plot_path, exist_ok=True) # dir should not exist
-        plt.savefig(os.path.join(plot_path, f'epoch{epoch}.png'), dpi=80)
+        plt.savefig(os.path.join(plot_path, f"{img_file_prefix}_{image_nr}.png"), dpi=80)
 
     @tf.function
     def train_step(self, real_x, real_y, epoch, summary_writer):
@@ -363,7 +367,28 @@ class CycleGAN(GAN):
             print('Cumulative training duration at epoch {} is {} sec\n'.format(epoch + 1, time.time() - start))
 
     def predict(self, pred_ds, output_path):
-        pass
+        """
+        :param pred_ds: tf.python.data.ops.dataset_ops.BatchDataset
+        :param output_path: str, output path for image
+        :return:
+        """
+        print("\nRendering images using pretrained weights\n")
+
+        img_nr = 0
+        for image in pred_ds:
+
+            # Output combined image
+            self.generate_images(self.generator_g, image, img_nr, output_path, img_file_prefix='img')
+
+            # Just prediction image
+            prediction = self.generator_g(image, training=False)
+            plt.figure(figsize=(6, 6))
+            plt.imshow(prediction[0] * 0.5 + 0.5)
+            plt.axis('off')
+            plt.savefig(os.path.join(output_path, f'prediction_{img_nr}.png'), dpi=80)
+            print('.', end='', flush=True)
+            img_nr += 1
+        print("\r")
 
 def parse_opt():
     parser = argparse.ArgumentParser()
