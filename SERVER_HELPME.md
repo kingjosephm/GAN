@@ -1,4 +1,4 @@
-# Useful docker info
+# Useful remote GPU server info
 
 ### Restart a previously instantiated, but stopped container in interactive mode
 
@@ -26,8 +26,14 @@
     $ docker stats <container_name> --no-stream  # no-stream option presents just the current stats
 
 # Linux commands
-### Move data onto server <br>
+### Move individual local data onto FTP server 
     $ scp file1 file2 <credentials>:<remote_dir> # Do this before ssh remote in
+
+### Move directory and all contents from local drive onto FTP
+    $ scp -r <dir> <credentials>:<remote_dir>
+
+### Move data from FTP server to local drive
+    $ scp username@remote:<remote_path> <local_path> # must be done outside remote session
 
 ### Unzip files
     $ unzip myzip.zip
@@ -35,11 +41,10 @@
 
 ### Read text file (e.g. log.txt) in container
 
-    $ input="/path/to/txt/file"
-    $ while IFS= read -r line
-    do
-      echo "$line"
-    done < "$input"
+    $ cat <file>
 
 ### Exit environment (including Docker interactive, which stops container)
     $ exit
+
+### To view available GPUs and their usage
+    $ nvidia-smi
