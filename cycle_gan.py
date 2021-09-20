@@ -124,7 +124,6 @@ class CycleGAN(GAN):
             test_X = test_X.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
             test_X = test_X.cache().shuffle(self.config['buffer_size'])
             test_X = test_X.batch(self.config["global_batch_size"])
-            test_X = test_X.with_options(self.options)
 
             # process training images
             train_X = train_X.cache().map(self.process_images_train, num_parallel_calls=tf.data.AUTOTUNE)
@@ -133,9 +132,6 @@ class CycleGAN(GAN):
             train_Y = train_Y.shuffle(self.config['buffer_size'])
             train_X = train_X.batch(self.config["global_batch_size"])
             train_Y = train_Y.batch(self.config["global_batch_size"])
-            train_X = train_X.with_options(self.options)
-            train_Y = train_Y.with_options(self.options)
-
         return train_X, train_Y, test_X
 
     def Generator(self, output_channels, norm_type='batchnorm'):
