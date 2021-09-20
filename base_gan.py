@@ -19,7 +19,7 @@ matplotlib.use('Agg') # suppresses plot
 # Configure distributed training across GPUs, if available
 print("Num GPUs Available: ", len(tf.config.list_physical_devices("GPU")))
 if tf.config.list_physical_devices('GPU'):
-    strategy = tf.distribute.MirroredStrategy(devices=["/gpu:0"])
+    strategy = tf.distribute.MirroredStrategy() # uses all GPUs available in container
 else:  # Use the Default Strategy
     #strategy = tf.distribute.get_strategy()  # default distribution strategy
     strategy = tf.distribute.OneDeviceStrategy('/CPU:0')  # use for debugging
