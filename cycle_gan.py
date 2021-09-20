@@ -92,12 +92,12 @@ class CycleGAN(GAN):
         print("\nReading in and processing images.\n", flush=True)
 
         # list of images in dir
-        contents_X = [i for i in os.listdir(self.config['imagesX']) if 'png' in i or 'jpg' in i]
-        contents_Y = [i for i in os.listdir(self.config['imagesY']) if 'png' in i or 'jpg' in i]
+        contents_X = [i for i in os.listdir(self.config['input_images']) if 'png' in i or 'jpg' in i]
+        contents_Y = [i for i in os.listdir(self.config['target_images']) if 'png' in i or 'jpg' in i]
 
         if predict:  # all images in `train` used for prediction; they're not training images, only kept for consistency
-            assert(contents_X), "No JPEG or PNG images found in imagesX directory!"
-            train_X = tf.data.Dataset.from_tensor_slices([self.config['imagesX'] + '/' + i for i in contents_X]) # resize all to same dims in case images different sizes
+            assert(contents_X), "No JPEG or PNG images found in input image directory!"
+            train_X = tf.data.Dataset.from_tensor_slices([self.config['input_images'] + '/' + i for i in contents_X]) # resize all to same dims in case images different sizes
             train_X = train_X.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
             train_X = train_X.shuffle(self.config['buffer_size'])
             train_X = train_X.batch(self.config["global_batch_size"])
@@ -105,9 +105,9 @@ class CycleGAN(GAN):
             test_X = None
 
         else:  # if train mode, break into train/test
-            assert(len(contents_X) >= 2), f"Insufficient number of training examples in imagesX directory! " \
+            assert(len(contents_X) >= 2), f"Insufficient number of training examples in input image directory! " \
                                           f"At least 2 are required, but found {len(contents_X)}!"
-            assert(len(contents_Y) >= 2), f"Insufficient number of training examples in imagesY directory! " \
+            assert(len(contents_Y) >= 2), f"Insufficient number of training examples in target image directory! " \
                                           f"At least 2 are required, but found {len(contents_Y)}!"
 
             # Randomly select 1 image to view training progress
@@ -116,9 +116,9 @@ class CycleGAN(GAN):
             train_X = [i for i in contents_X if i not in test_X]
             train_Y = [i for i in contents_Y]
 
-            test_X = tf.data.Dataset.from_tensor_slices([self.config['imagesX'] + '/' + i for i in test_X])
-            train_X = tf.data.Dataset.from_tensor_slices([self.config['imagesX'] + '/' + i for i in train_X])
-            train_Y = tf.data.Dataset.from_tensor_slices([self.config['imagesY'] + '/' + i for i in train_Y])
+            test_X = tf.data.Dataset.from_tensor_slices([self.config['input_images'] + '/' + i for i in test_X])
+            train_X = tf.data.Dataset.from_tensor_slices([self.config['input_images'] + '/' + i for i in train_X])
+            train_Y = tf.data.Dataset.from_tensor_slices([self.config['target_images'] + '/' + i for i in train_Y])
 
             # process test images
             test_X = test_X.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
@@ -249,7 +249,6 @@ class CycleGAN(GAN):
             # getting the pixel values between [0, 1] to plot it.
             plt.imshow(display_list[i] * 0.5 + 0.5)
             plt.axis('off')
-        plt.show()
 
         plot_path = os.path.join(output_path, 'test_images')
         os.makedirs(plot_path, exist_ok=True) # dir should not exist
@@ -363,12 +362,13 @@ class CycleGAN(GAN):
 
             print('Cumulative training duration at epoch {} is {} sec\n'.format(epoch + 1, time.time() - start))
 
+    def predict(self, pred_ds, output_path):
+        pass
 
 def parse_opt():
     parser = argparse.ArgumentParser()
     # Needed in all cases
-    parser.add_argument('--imagesX', type=str, help='path to set of images A', required=True)
-    parser.add_argument('--imagesY', type=str, help='path to set of images B', required=True)
+    parser.add_argument('--input-images', type=str, help='path to input images', required=True)
     parser.add_argument('--output', type=str, help='path to output results', required=True)
     parser.add_argument('--img-size', type=int, default=256, help='image size h,w')
     parser.add_argument('--batch-size', type=int, default=1, help='batch size per replica')
@@ -381,10 +381,11 @@ def parse_opt():
     group.add_argument('--train', action='store_true', help='train model using data')
     group.add_argument('--predict', action='store_true', help='use pretrained weights to make predictions on data')
     # Train params
+    parser.add_argument('--target-images', type=str, help='path to target images', required='--train' in sys.argv)
+    parser.add_argument('--epochs', type=int, default=5, help='number of epochs to train', required='--train' in sys.argv)
     group2 = parser.add_mutually_exclusive_group(required='--train' in sys.argv)
     group2.add_argument('--save-weights', action='store_true', help='save model checkpoints and weights')
     group2.add_argument('--no-save-weights', action='store_true', help='do not save model checkpoints or weights')
-    parser.add_argument('--epochs', type=int, default=5, help='number of epochs to train')
     # Predict param
     parser.add_argument('--weights', type=str, help='path to pretrained model weights for prediction',
                         required='--predict' in sys.argv)
