@@ -331,13 +331,13 @@ class Pix2Pix(GAN):
             if (step + 1) % 5000 == 0:
                 if save_weights:
                     checkpoint_manager.save()
-                self.generate_images(self.generator, example_input, example_target, step, output_path)
+                self.generate_images(self.generator, example_input, example_target, step+1, output_path)
 
             # At end save checkpoint and final test image
             if (step + 1) == self.config['steps']:
                 if save_weights:
                     checkpoint_manager.save()
-                self.generate_images(self.generator, example_input, example_target, step, output_path)
+                self.generate_images(self.generator, example_input, example_target, step+1, output_path)
                 print(f'Cumulative training time at end of {step} steps: {time.time() - start:.2f} sec\n')
 
     def predict(self, pred_ds, output_path):

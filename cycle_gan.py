@@ -353,12 +353,12 @@ class CycleGAN(GAN):
             if (epoch + 1) % 5 == 0:
                 if save_weights:
                     checkpoint_manager.save()
-                self.generate_images(self.generator_g, example_X, epoch, output_path)
+                self.generate_images(self.generator_g, example_X, epoch+1, output_path)
 
             if (epoch + 1) == self.config['epochs']:
                 if save_weights:
                     checkpoint_manager.save()
-                self.generate_images(self.generator_g, example_X, epoch, output_path)
+                self.generate_images(self.generator_g, example_X, epoch+1, output_path)
 
             print('Cumulative training duration at epoch {} is {} sec\n'.format(epoch + 1, time.time() - start))
 
