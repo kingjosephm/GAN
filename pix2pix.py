@@ -20,9 +20,14 @@ from base_gan import GAN
 
 """
 
+# Disable TensorFlow AUTO sharding policy warning
+options = tf.data.Options()
+options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+
 class Pix2Pix(GAN):
     def __init__(self, config):
         super().__init__(config)
+        self.options = options
         self.generator = self.Generator()
         self.discriminator = super().Discriminator(target=True)
         self.generator_optimizer = super().optimizer()
@@ -150,7 +155,7 @@ class Pix2Pix(GAN):
 
     def Generator(self):
         """
-        Define generator by combining down- and upsamplers.
+        Modified U-Net encoder.
         :return: tf.keras Model class
         """
 

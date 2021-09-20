@@ -16,11 +16,6 @@ matplotlib.use('Agg') # suppresses plot
 
 """
 
-# Disable TensorFlow AUTO sharding policy warning
-options = tf.data.Options()
-options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
-
-
 # Configure distributed training across GPUs, if available
 print("Num GPUs Available: ", len(tf.config.list_physical_devices("GPU")))
 if tf.config.list_physical_devices('GPU'):
@@ -35,7 +30,6 @@ class GAN(ABC):
         self.config = config
         self.config['global_batch_size'] = self.config['batch_size'] * strategy.num_replicas_in_sync
         self.strategy = strategy
-        self.options = options
         self.loss_obj = self.loss_object()
 
     def load(self, image_file, resize=False):
