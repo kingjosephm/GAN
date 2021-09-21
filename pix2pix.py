@@ -8,9 +8,9 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg') # suppresses plot
-from IPython import display
 from datetime import datetime
 from base_gan import GAN
+import pdb
 
 """
     Pix2Pix in Tensorflow
@@ -32,6 +32,10 @@ class Pix2Pix(GAN):
         self.discriminator = super().Discriminator(target=True)
         self.generator_optimizer = super().optimizer()
         self.discriminator_optimizer = super().optimizer()
+        self.model_metrics = {'Gen total loss': [],
+                              'Gen loss': [],
+                              'Gen loss2': [],
+                              'Disc loss': []}
 
     def split_img(self, image_file):
         """
@@ -228,7 +232,7 @@ class Pix2Pix(GAN):
             if self.config['generator_loss']=='l1':
                 # Mean absolute error
                 gan_loss2 = tf.reduce_mean(tf.abs(target - gen_output))
-            else: # ssim loss
+            elif self.config['generator_loss']=='ssim':
                 # SSIM loss, see https://www.tensorflow.org/api_docs/python/tf/image/ssim
                 gan_loss2 = (1 - tf.reduce_sum(tf.image.ssim(input_image, target, max_val=255, filter_size=11, filter_sigma=1.5, k1=0.01, k2=0.03)))
 
@@ -242,7 +246,7 @@ class Pix2Pix(GAN):
         :param input_image:
         :param target:
         :param step:
-        :param summary_writer:
+        :param summary_writer: tf.summary_writer object
         :return:
         """
 
@@ -264,11 +268,14 @@ class Pix2Pix(GAN):
         self.discriminator_optimizer.apply_gradients(zip(discriminator_gradients,
                                                     self.discriminator.trainable_variables))
 
+        # Model metrics to use in tensorboard
         with summary_writer.as_default():
             tf.summary.scalar('gen_total_loss', gen_total_loss, step=step // 100)
             tf.summary.scalar('gen_gan_loss', gen_gan_loss, step=step // 100)
-            tf.summary.scalar('gen_gan_loss2', gen_gan_loss2, step=step // 100)
+            tf.summary.scalar('gen_gan_loss2', gen_gan_loss2, step=step // 100) # L1 loss or SSIM
             tf.summary.scalar('disc_loss', disc_loss, step=step // 100)
+
+        return gen_total_loss, gen_gan_loss, gen_gan_loss2, disc_loss  # return model metrics as unable to convert to numpy within @tf.function
 
     def generate_images(self, model, test_input, tar, step, output_path):
         """
@@ -302,7 +309,7 @@ class Pix2Pix(GAN):
         :param train_ds:
         :param test_ds:
         :param steps:
-        :param summary_writer:
+        :param summary_writer: tf.summary_writer object
         :param output_path: str, path to output test images across training steps
         :param checkpoint_manager:
         :param save_weights: bool, whether to save model weights per 5k training steps and at end, along with model checkpoints
@@ -319,7 +326,14 @@ class Pix2Pix(GAN):
 
                 print(f'\nCumulative training time at step {step+1}: {time.time() - start:.2f} sec\n')
 
-            self.train_step(input_image, target, step, summary_writer)
+            gen_total_loss, gen_gan_loss, gen_gan_loss2, disc_loss = self.train_step(input_image, target, step, summary_writer)
+
+            # Performance metrics from step into dict
+            # Note - must be done outside self.train_step() as numpy operations do not work in tf.function
+            self.model_metrics['Gen total loss'].append(tf.reduce_sum(gen_total_loss, axis=None).numpy().tolist())
+            self.model_metrics['Gen loss'].append(tf.reduce_sum(gen_gan_loss, axis=None).numpy().tolist())
+            self.model_metrics['Gen loss2'].append(tf.reduce_sum(gen_gan_loss2, axis=None).numpy().tolist())
+            self.model_metrics['Disc loss'].append(tf.reduce_sum(disc_loss, axis=None).numpy().tolist())
 
             # Save (checkpoint) the model every 5k steps and at end
             # Also saves generated training image
@@ -443,7 +457,7 @@ def main(opt):
         else:
             manager = None
 
-        # Summary witer file for tensorboard
+        # Summary writer file for tensorboard
         summary_writer = tf.summary.create_file_writer(log_dir)
 
         p2p.fit(train_ds=train_dataset,
@@ -453,6 +467,10 @@ def main(opt):
                 output_path=full_path,
                 checkpoint_manager=manager,
                 save_weights=p2p.config['save_weights'])
+
+        # Output model metrics dict to log dir
+        with open(os.path.join(log_dir, 'metrics.json'), 'w') as f:
+            json.dump(p2p.model_metrics, f)
 
     print("Done.")
 
