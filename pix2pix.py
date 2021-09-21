@@ -316,16 +316,14 @@ class Pix2Pix(GAN):
 
         for step, (input_image, target) in train_ds.repeat().take(steps).enumerate():
             if (step % 1000 == 0) and (step > 0):
-                display.clear_output(wait=True)
 
-                print(f"Step: {step // 1000}k")
-                print(f'\nCumulative training time: {time.time() - start:.2f} sec\n')
+                print(f'\nCumulative training time at step {step+1}: {time.time() - start:.2f} sec\n')
 
             self.train_step(input_image, target, step, summary_writer)
 
             # Save (checkpoint) the model every 5k steps and at end
             # Also saves generated training image
-            if (step + 1) % 5000 == 0:
+            if (step + 1) % 50000 == 0:
                 if save_weights:
                     checkpoint_manager.save()
                 self.generate_images(self.generator, example_input, example_target, step+1, output_path)
