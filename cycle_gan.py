@@ -8,7 +8,6 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg') # suppresses plot
-from IPython import display
 from datetime import datetime
 from base_gan import GAN
 
@@ -33,6 +32,14 @@ class CycleGAN(GAN):
         self.generator_f_optimizer = super().optimizer()
         self.discriminator_x_optimizer = super().optimizer()
         self.discriminator_y_optimizer = super().optimizer()
+        self.model_metrics = {'gen_g_loss': [],
+                              'gen_f_loss': [],
+                              'total_cycle_loss': [],
+                              'total_gen_g_loss': [],
+                              'total_gen_f_loss': [],
+                              'disc_x_loss': [],
+                              'disc_y_loss': []}
+
 
     def random_crop(self, image, height, width):
         """
@@ -332,6 +339,9 @@ class CycleGAN(GAN):
             tf.summary.scalar('disc_x_loss', disc_x_loss, step=epoch)
             tf.summary.scalar('disc_y_loss', disc_y_loss, step=epoch)
 
+        return gen_g_loss, gen_f_loss, total_cycle_loss, total_gen_g_loss, total_gen_f_loss, \
+               disc_x_loss, disc_y_loss
+
     def fit(self, train_X, train_Y, test_X, epochs, summary_writer, output_path, checkpoint_manager=None, save_weights=True):
 
         print("\nTraining...\n", flush=True)
@@ -343,10 +353,19 @@ class CycleGAN(GAN):
 
             n = 0
             for image_x, image_y in tf.data.Dataset.zip((train_X, train_Y)):
-                self.train_step(image_x, image_y, epoch, summary_writer)
-                n += 1
 
-            display.clear_output(wait=True)
+                gen_g_loss, gen_f_loss, total_cycle_loss, total_gen_g_loss, total_gen_f_loss, \
+                disc_x_loss, disc_y_loss = self.train_step(image_x, image_y, epoch, summary_writer)
+
+                # Performance metrics from step into dict
+                # Note - must be done outside self.train_step() as numpy operations do not work in tf.function
+                self.model_metrics['gen_g_loss'].append(tf.reduce_sum(gen_g_loss, axis=None).numpy().tolist())
+                self.model_metrics['gen_f_loss'].append(tf.reduce_sum(gen_f_loss, axis=None).numpy().tolist())
+                self.model_metrics['total_cycle_loss'].append(tf.reduce_sum(total_cycle_loss, axis=None).numpy().tolist())
+                self.model_metrics['total_gen_g_loss'].append(tf.reduce_sum(total_gen_g_loss, axis=None).numpy().tolist())
+                self.model_metrics['total_gen_f_loss'].append(tf.reduce_sum(total_gen_f_loss, axis=None).numpy().tolist())
+                self.model_metrics['disc_x_loss'].append(tf.reduce_sum(disc_x_loss, axis=None).numpy().tolist())
+                self.model_metrics['disc_y_loss'].append(tf.reduce_sum(disc_y_loss, axis=None).numpy().tolist())
 
             # Every 5 epochs save weights and generate predicted image
             if (epoch + 1) % 5 == 0:
@@ -360,6 +379,7 @@ class CycleGAN(GAN):
                 self.generate_images(self.generator_g, example_X, epoch+1, output_path)
 
             print('Cumulative training duration at epoch {} is {} sec\n'.format(epoch + 1, time.time() - start))
+            n += 1
 
     def predict(self, pred_ds, output_path):
         """
@@ -470,6 +490,10 @@ def main(opt):
                  output_path=full_path,
                  checkpoint_manager=manager,
                  save_weights=cgan.config['save_weights'])
+
+        # Output model metrics dict to log dir
+        with open(os.path.join(log_dir, 'metrics.json'), 'w') as f:
+            json.dump(cgan.model_metrics, f)
 
     print("Done.")
 
