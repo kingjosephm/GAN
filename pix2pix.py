@@ -5,6 +5,7 @@ import json
 import sys
 import argparse
 import tensorflow as tf
+import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg') # suppresses plot
@@ -32,10 +33,10 @@ class Pix2Pix(GAN):
         self.discriminator = super().Discriminator(target=True)
         self.generator_optimizer = super().optimizer()
         self.discriminator_optimizer = super().optimizer()
-        self.model_metrics = {'Gen total loss': [],
-                              'Gen loss': [],
-                              'Gen loss2': [],
-                              'Disc loss': []}
+        self.model_metrics = {'Generator Total Loss': [],
+                              'Generator Loss (Primary)': [],
+                              'Generator Loss (Secondary)': [],
+                              'Discriminator Loss': []}
 
     def split_img(self, image_file):
         """
@@ -270,10 +271,10 @@ class Pix2Pix(GAN):
 
         # Model metrics to use in tensorboard
         with summary_writer.as_default():
-            tf.summary.scalar('gen_total_loss', gen_total_loss, step=step // 100)
-            tf.summary.scalar('gen_gan_loss', gen_gan_loss, step=step // 100)
-            tf.summary.scalar('gen_gan_loss2', gen_gan_loss2, step=step // 100) # L1 loss or SSIM
-            tf.summary.scalar('disc_loss', disc_loss, step=step // 100)
+            tf.summary.scalar('Generator Total Loss', gen_total_loss, step=step // 100)
+            tf.summary.scalar('Generator Loss (Primary)', gen_gan_loss, step=step // 100)
+            tf.summary.scalar('Generator Loss (Secondary)', gen_gan_loss2, step=step // 100) # L1 loss or SSIM
+            tf.summary.scalar('Discriminator Loss', disc_loss, step=step // 100)
 
         return gen_total_loss, gen_gan_loss, gen_gan_loss2, disc_loss  # return model metrics as unable to convert to numpy within @tf.function
 
@@ -330,10 +331,10 @@ class Pix2Pix(GAN):
 
             # Performance metrics from step into dict
             # Note - must be done outside self.train_step() as numpy operations do not work in tf.function
-            self.model_metrics['Gen total loss'].append(tf.reduce_sum(gen_total_loss, axis=None).numpy().tolist())
-            self.model_metrics['Gen loss'].append(tf.reduce_sum(gen_gan_loss, axis=None).numpy().tolist())
-            self.model_metrics['Gen loss2'].append(tf.reduce_sum(gen_gan_loss2, axis=None).numpy().tolist())
-            self.model_metrics['Disc loss'].append(tf.reduce_sum(disc_loss, axis=None).numpy().tolist())
+            self.model_metrics['Generator Total Loss'].append(tf.reduce_sum(gen_total_loss, axis=None).numpy().tolist())
+            self.model_metrics['Generator Loss (Primary)'].append(tf.reduce_sum(gen_gan_loss, axis=None).numpy().tolist())
+            self.model_metrics['Generator Loss (Secondary)'].append(tf.reduce_sum(gen_gan_loss2, axis=None).numpy().tolist())
+            self.model_metrics['Discriminator Loss'].append(tf.reduce_sum(disc_loss, axis=None).numpy().tolist())
 
             # Save (checkpoint) the model every 5k steps and at end
             # Also saves generated training image
@@ -411,6 +412,25 @@ def parse_opt():
                         required='--predict' in sys.argv)
     return parser.parse_args()
 
+def make_fig(df, title, output_path):
+    '''
+    Creates two line graphs in same figure using Matplotlib. Outputs as PNG to disk.
+    :param df: pd.Series
+    :param title: str, title of figure. Also used to name PNG plot when outputted to disk.
+    :param output_path: str, path to output PNG
+    :return: None, writes figure to disk
+    '''
+    plt.figure(figsize=(10, 8), dpi=80)
+    plt.plot(df, alpha=0.7, label='Raw')
+    plt.plot(df.ewm(alpha=0.1).mean(), color='red', linewidth=2, label='Weighted Mean')
+    plt.xlabel('Step (100s)')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.title(f'Pix2Pix {title}')
+    os.makedirs(output_path, exist_ok=True)  # Creates output directory if not existing
+    plt.savefig(os.path.join(output_path, f'{title}.png'), dpi=80)
+    plt.close()
+
 
 def main(opt):
     """
@@ -471,6 +491,13 @@ def main(opt):
         # Output model metrics dict to log dir
         with open(os.path.join(log_dir, 'metrics.json'), 'w') as f:
             json.dump(p2p.model_metrics, f)
+
+        # Output performance metrics figures
+        for key in p2p.model_metrics.keys():
+            df = pd.DataFrame(p2p.model_metrics[key]).reset_index()
+            df['index'] = df['index'] / 100  # scale by 100
+            df.set_index('index', inplace=True)
+            make_fig(df, title=key, output_path=os.path.join(full_path, 'figs'))
 
     print("Done.")
 
