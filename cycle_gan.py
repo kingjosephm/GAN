@@ -218,8 +218,7 @@ class CycleGAN(GAN):
         """
         with self.strategy.scope():
             loss1 = tf.reduce_mean(tf.abs(real_image - cycled_image))
-            LAMBDA = 10
-            return loss1 * LAMBDA
+            return loss1 * self.config['lambda']
 
     def identity_loss(self, real_image, same_image):
         """
@@ -229,8 +228,7 @@ class CycleGAN(GAN):
         """
         with self.strategy.scope():
             loss = tf.reduce_mean(tf.abs(real_image - same_image))
-            LAMBDA = 10
-            return LAMBDA * 0.5 * loss
+            return self.config['lambda'] * 0.5 * loss
 
     def generate_images(self, model, test_input, image_nr, output_path, img_file_prefix='epoch'):
         """
@@ -425,6 +423,7 @@ def parse_opt():
     group2 = parser.add_mutually_exclusive_group(required='--train' in sys.argv)
     group2.add_argument('--save-weights', action='store_true', help='save model checkpoints and weights')
     group2.add_argument('--no-save-weights', action='store_true', help='do not save model checkpoints or weights')
+    parser.add_argument('--lambda', type=int, default=10, help='lambda parameter value')
     # Predict param
     parser.add_argument('--weights', type=str, help='path to pretrained model weights for prediction',
                         required='--predict' in sys.argv)
