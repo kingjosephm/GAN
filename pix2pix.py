@@ -237,7 +237,7 @@ class Pix2Pix(GAN):
                 # SSIM loss, see https://www.tensorflow.org/api_docs/python/tf/image/ssim
                 gan_loss2 = (1 - tf.reduce_sum(tf.image.ssim(input_image, target, max_val=255, filter_size=11, filter_sigma=1.5, k1=0.01, k2=0.03)))
 
-            total_gen_loss = gan_loss + (100 * gan_loss2) # 100=LAMBDA
+            total_gen_loss = gan_loss + (self.config['lambda'] * gan_loss2)
 
         return total_gen_loss, gan_loss, gan_loss2
 
@@ -259,7 +259,7 @@ class Pix2Pix(GAN):
             disc_generated_output = self.discriminator([input_image, gen_output], training=True)
 
             gen_total_loss, gen_gan_loss, gen_gan_loss2 = self.generator_loss(disc_generated_output, gen_output, target, input_image)
-            disc_loss = self.discriminator_loss(disc_real_output, disc_generated_output)
+            disc_loss = self.discriminator_loss(disc_real_output, disc_generated_output, 0.5)  # TF example lacked, but original code divides by 2, see https://github.com/phillipi/pix2pix/blob/89ff2a81ce441fbe1f1b13eca463b87f1e539df8/train.lua#L254
 
         generator_gradients = gen_tape.gradient(gen_total_loss, self.generator.trainable_variables)
         discriminator_gradients = disc_tape.gradient(disc_loss, self.discriminator.trainable_variables)
@@ -407,6 +407,7 @@ def parse_opt():
     group2.add_argument('--save-weights', action='store_true', help='save model checkpoints and weights')
     group2.add_argument('--no-save-weights', action='store_true', help='do not save model checkpoints or weights')
     parser.add_argument('--steps', type=int, default=10, help='number of training steps to take')
+    parser.add_argument('--lambda', type=int, default=100, help='lambda value for secondary generator loss (L1)')
     # Predict param
     parser.add_argument('--weights', type=str, help='path to pretrained model weights for prediction',
                         required='--predict' in sys.argv)
