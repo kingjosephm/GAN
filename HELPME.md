@@ -25,6 +25,12 @@
     $ docker image ls  # view all docker images on host machine
     $ docker stats <container_name> --no-stream  # no-stream option presents just the current stats
 
+### Create a Docker image and upload to DockerHub for future use
+    
+    $ docker login  # requires account, will prompt for username and password
+    $ docker commit [OPTIONS] <container_ID or container_name> <dockerhub_path>:<tag>
+    $ docker push <dockerhub_path>:<tag>
+
 # Linux commands
 ### Move individual local data onto FTP server 
     $ scp file1 file2 <credentials>:<remote_dir> # Do this before ssh remote in
@@ -48,3 +54,6 @@
 
 ### To view available GPUs and their usage
     $ nvidia-smi
+
+### To get IDs of all GPUs
+    $ nvidia-smi --list-gpus
