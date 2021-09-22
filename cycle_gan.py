@@ -38,7 +38,7 @@ class CycleGAN(GAN):
                               'total_gen_g_loss': [],
                               'total_gen_f_loss': [],
                               'disc_x_loss': [],
-                              'disc_y_loss': []}
+                              'disc_y_loss': []}  # TODO - more interpretable names in dictionary
 
 
     def random_crop(self, image, height, width):
