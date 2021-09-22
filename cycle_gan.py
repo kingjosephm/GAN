@@ -28,10 +28,10 @@ class CycleGAN(GAN):
         self.generator_f = self.Generator(self.config['output_channels'], norm_type='instancenorm')
         self.discriminator_x = super().Discriminator(norm_type='instancenorm', target=False)
         self.discriminator_y = super().Discriminator(norm_type='instancenorm', target=False)
-        self.generator_g_optimizer = super().optimizer()
-        self.generator_f_optimizer = super().optimizer()
-        self.discriminator_x_optimizer = super().optimizer()
-        self.discriminator_y_optimizer = super().optimizer()
+        self.generator_g_optimizer = super().optimizer(learning_rate=self.config['learning_rate'], beta_1=self.config['beta_1'], beta_2=self.config['beta_2'])
+        self.generator_f_optimizer = super().optimizer(learning_rate=self.config['learning_rate'], beta_1=self.config['beta_1'], beta_2=self.config['beta_2'])
+        self.discriminator_x_optimizer = super().optimizer(learning_rate=self.config['learning_rate'], beta_1=self.config['beta_1'], beta_2=self.config['beta_2'])
+        self.discriminator_y_optimizer = super().optimizer(learning_rate=self.config['learning_rate'], beta_1=self.config['beta_1'], beta_2=self.config['beta_2'])
         self.model_metrics = {'gen_g_loss': [],
                               'gen_f_loss': [],
                               'total_cycle_loss': [],
@@ -424,6 +424,9 @@ def parse_opt():
     group2.add_argument('--save-weights', action='store_true', help='save model checkpoints and weights')
     group2.add_argument('--no-save-weights', action='store_true', help='do not save model checkpoints or weights')
     parser.add_argument('--lambda', type=int, default=10, help='lambda parameter value')
+    parser.add_argument('--learning-rate', type=float, default=0.0002, help='learning rate for Adam optimizer for generators and discriminators')
+    parser.add_argument('--beta-1', type=float, default=0.5, help='exponential decay rate for 1st moment of Adam optimizer for generators and discriminators')
+    parser.add_argument('--beta-2', type=float, default=0.999,  help='exponential decay rate for 2st moment of Adam optimizer for generators and discriminators')
     # Predict param
     parser.add_argument('--weights', type=str, help='path to pretrained model weights for prediction',
                         required='--predict' in sys.argv)

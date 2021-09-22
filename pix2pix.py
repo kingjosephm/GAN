@@ -11,7 +11,6 @@ import matplotlib
 matplotlib.use('Agg') # suppresses plot
 from datetime import datetime
 from base_gan import GAN
-import pdb
 
 """
     Pix2Pix in Tensorflow
@@ -31,8 +30,8 @@ class Pix2Pix(GAN):
         self.options = options
         self.generator = self.Generator()
         self.discriminator = super().Discriminator(target=True)
-        self.generator_optimizer = super().optimizer()
-        self.discriminator_optimizer = super().optimizer()
+        self.generator_optimizer = super().optimizer(learning_rate=self.config['learning_rate'], beta_1=self.config['beta_1'], beta_2=self.config['beta_2'])
+        self.discriminator_optimizer = super().optimizer(learning_rate=self.config['learning_rate'], beta_1=self.config['beta_1'], beta_2=self.config['beta_2'])
         self.model_metrics = {'Generator Total Loss': [],
                               'Generator Loss (Primary)': [],
                               'Generator Loss (Secondary)': [],
@@ -408,6 +407,9 @@ def parse_opt():
     group2.add_argument('--no-save-weights', action='store_true', help='do not save model checkpoints or weights')
     parser.add_argument('--steps', type=int, default=10, help='number of training steps to take')
     parser.add_argument('--lambda', type=int, default=100, help='lambda value for secondary generator loss (L1)')
+    parser.add_argument('--learning-rate', type=float, default=0.0002, help='learning rate for Adam optimizer for generator and discriminator')
+    parser.add_argument('--beta-1', type=float, default=0.5, help='exponential decay rate for 1st moment of Adam optimizer for generator and discriminator')
+    parser.add_argument('--beta-2', type=float, default=0.999,  help='exponential decay rate for 2st moment of Adam optimizer for generator and discriminator')
     # Predict param
     parser.add_argument('--weights', type=str, help='path to pretrained model weights for prediction',
                         required='--predict' in sys.argv)

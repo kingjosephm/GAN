@@ -211,13 +211,13 @@ class GAN(ABC):
 
             return (real_loss + generated_loss) * factor
 
-    def optimizer(self):
+    def optimizer(self, learning_rate=2e-4, beta_1=0.5, beta_2=0.999):
         """
         Optimizer for both generator and discriminators
         :return: tf.keras Adam optimizer
         """
         with self.strategy.scope():
-            optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)  # TODO - learning rate by batch size, if >GPU
+            optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=beta_1, beta_2=beta_2)
         return optimizer
 
     @abstractmethod
