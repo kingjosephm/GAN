@@ -495,6 +495,8 @@ def main(opt):
         with open(os.path.join(log_dir, 'metrics.json'), 'w') as f:
             json.dump(cgan.model_metrics, f)
 
+        # TODO - add code that outputs performance metrics as PNG
+
     print("Done.")
 
 if __name__ == '__main__':
