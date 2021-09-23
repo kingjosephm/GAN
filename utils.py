@@ -1,27 +1,10 @@
-from PIL import Image
-import os, cv2
+import os
 import tensorflow as tf
 import numpy as np
-
-
-def split_image(img, output_path):
-    height = 256  # Desired final height
-    width = 256  # Desired final width
-    k = 0
-    subdir = {0: '/truth/', 1: '/input/'}
-
-    im = Image.open(img)
-    imgwidth, imgheight = im.size
-    assert (imgwidth == 512)
-    for i in range(0, imgheight, height):
-        for j in range(0, imgwidth, width):
-            box = (j, i, j + width, i + height)
-            a = im.crop(box)
-            path = output_path + subdir[k]
-            os.makedirs(path, exist_ok=True)
-            a.save(path + os.path.split(img)[-1])
-            k += 1
-    return "Done with all images"
+try:
+    import cv2 # not in docker container, only run locally
+except ModuleNotFoundError:
+    pass
 
 class InstanceNormalization(tf.keras.layers.Layer):
   """Instance Normalization Layer (https://arxiv.org/abs/1607.08022)."""
@@ -91,3 +74,55 @@ def concat_images(path, output_path, resize_width=None, resize_height=None):
         conc = np.concatenate((vi, th), axis=1)
         dir_name = path.split(os.sep)[-2]
         cv2.imwrite(os.path.join(output_path, dir_name + '_' + i[9:]), conc)
+
+        """
+        # Use via:
+        for subdir, dirs, files in os.walk(root):
+            merge_images(subdir, output_path, resize_width=640, resize_height=512)
+        """
+def load(image_file):
+    """
+    :param image_file: str, path to image
+    :return: tensorflow.python.framework.ops.EagerTensor
+    """
+    # Read and decode an image file to a uint8 tensor
+    image = tf.io.read_file(image_file)
+    try:
+        image = tf.image.decode_png(image)
+    except:
+        image = tf.image.decode_jpeg(image)
+
+    # Cast to float32 tensors
+    image = tf.cast(image, tf.float32)
+    return image
+
+def split_images(path, resize_width=None, resize_height=None):
+    '''
+    :param path: str, path to root
+    :param resize_width: int, optional to resize width
+    :param resize_height: int, optional to resize height
+    :return: None, outputs to disk
+    '''
+
+    images = [i for i in os.listdir(path) if ".png" in i or ".jpeg" in i]
+
+    for x in images:
+
+        image = load(os.path.join(path, x))
+
+        # Split each image tensor into two tensors:
+        w = tf.shape(image)[1]
+        w = w // 2
+        input_image = image[:, w:, :]
+        real_image = image[:, :w, :]
+
+        # Resize (Optional)
+        if (resize_height is not None) and (resize_width is not None):
+            input_image = tf.image.resize(input_image, [resize_height, resize_width], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+            real_image = tf.image.resize(real_image, [resize_height, resize_width], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+
+
+        cv2.imwrite(os.path.join(path, '../separated/visible', x), real_image.numpy())
+        cv2.imwrite(os.path.join(path, '../separated/thermal', x), input_image.numpy())
+
+    return "Done with all images"
