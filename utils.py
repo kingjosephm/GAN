@@ -1,6 +1,7 @@
 from PIL import Image
-import os
+import os, cv2
 import tensorflow as tf
+import numpy as np
 
 
 def split_image(img, output_path):
@@ -47,3 +48,46 @@ class InstanceNormalization(tf.keras.layers.Layer):
     inv = tf.math.rsqrt(variance + self.epsilon)
     normalized = (x - mean) * inv
     return self.scale * normalized + self.offset
+
+
+def concat_images(path, output_path, resize_width=None, resize_height=None):
+    '''
+    Function to create concatenated visible (left) and thermal (right) image in same PNG for pix2pix model.
+    Some poor-quality visible images were also manually deleted, so the function checks if the matching thermal images
+    are still on disk and deletes these images too. Also crops thermal and visible slightly since there was a black
+    stripe in all visible images.
+    :param path: str, root dir path
+    :param output_path: str, output path
+    :param resize_width: int, optional to resize width
+    :param resize_height: int, optional to resize height
+    :return: None, outputs to disk
+    '''
+    therm = sorted([i for i in os.listdir(path) if "therm_adj" in i])  # thermal adjusted images
+
+    for i in therm:
+
+        # See if visual counterpart exists, otherwise delete thermal (done since many images not useful)
+        if not os.path.exists(os.path.join(path, 'vis'+i[9:])):
+            os.remove(os.path.join(path, i))  # remove adjusted thermal
+            os.remove(os.path.join(path, 'therm'+i[9:]))  # remove original thermal
+            continue
+        else: # match does exist
+            th = cv2.imread(os.path.join(path, i))
+            vi = cv2.imread(os.path.join(path, 'vis'+ i[9:]))  # Will error if no match found
+
+        # Verify shape
+        assert(th.shape == vi.shape), f"Size mismatch! image '{i}' is not the same size as its visible counterpart!"
+
+        # Crop images - original real images had black strip that we want to remove
+        vi = vi[10:490, 40:]
+        th = th[10:490, 40:]
+
+        # Resize (Optional)
+        if (resize_height is not None) and (resize_width is not None):
+            th = cv2.resize(th, (resize_width, resize_height), interpolation= cv2.INTER_LINEAR)
+            vi = cv2.resize(vi, (resize_width, resize_height), interpolation= cv2.INTER_LINEAR)
+
+        # Concat and output
+        conc = np.concatenate((vi, th), axis=1)
+        dir_name = path.split(os.sep)[-2]
+        cv2.imwrite(os.path.join(output_path, dir_name + '_' + i[9:]), conc)
