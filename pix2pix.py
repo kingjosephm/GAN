@@ -165,7 +165,7 @@ class Pix2Pix(GAN):
 
         with self.strategy.scope():
 
-            inputs = tf.keras.layers.Input(shape=[256, 256, 3])
+            inputs = tf.keras.layers.Input(shape=[self.config['img_size'], self.config['img_size'], 3])
 
             down_stack = [
                 super().downsample(64, 4, apply_norm=False),  # (batch_size, 128, 128, 64)
