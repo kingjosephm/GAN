@@ -500,6 +500,9 @@ def main(opt):
             df = pd.DataFrame(p2p.model_metrics[key]).reset_index()
             df['index'] = df['index'] / 100  # scale by 100
             df.set_index('index', inplace=True)
+            if len(df) > 1000:  # Makes figure more interpretable with large number of steps
+                df = df.sample(n=1000, random_state=123)
+                df = df.sort_index()
             make_fig(df, title=key, output_path=os.path.join(full_path, 'figs'))
 
     print("Done.")
