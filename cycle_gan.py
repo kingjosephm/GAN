@@ -5,6 +5,7 @@ import json
 import sys
 import argparse
 import tensorflow as tf
+import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg') # suppresses plot
@@ -32,13 +33,13 @@ class CycleGAN(GAN):
         self.generator_f_optimizer = super().optimizer(learning_rate=self.config['learning_rate'], beta_1=self.config['beta_1'], beta_2=self.config['beta_2'])
         self.discriminator_x_optimizer = super().optimizer(learning_rate=self.config['learning_rate'], beta_1=self.config['beta_1'], beta_2=self.config['beta_2'])
         self.discriminator_y_optimizer = super().optimizer(learning_rate=self.config['learning_rate'], beta_1=self.config['beta_1'], beta_2=self.config['beta_2'])
-        self.model_metrics = {'gen_g_loss': [],
-                              'gen_f_loss': [],
-                              'total_cycle_loss': [],
-                              'total_gen_g_loss': [],
-                              'total_gen_f_loss': [],
-                              'disc_x_loss': [],
-                              'disc_y_loss': []}  # TODO - more interpretable names in dictionary
+        self.model_metrics = {'X->Y Generator Loss': [],
+                              'Y->X Generator Loss': [],
+                              'Total Cycle Loss': [],
+                              'Total X->Y Generator Loss': [],
+                              'Total Y->X Generator Loss': [],
+                              'Discriminator X Loss': [],
+                              'Discriminator Y Loss': []}
 
 
     def random_crop(self, image, height, width):
@@ -329,13 +330,13 @@ class CycleGAN(GAN):
                                                       self.discriminator_y.trainable_variables))
 
         with summary_writer.as_default():
-            tf.summary.scalar('gen_g_loss', tf.reduce_sum(gen_g_loss), step=epoch)
-            tf.summary.scalar('gen_f_loss', tf.reduce_sum(gen_f_loss), step=epoch)
-            tf.summary.scalar('total_cycle_loss', tf.reduce_sum(total_cycle_loss), step=epoch)
-            tf.summary.scalar('total_gen_g_loss', tf.reduce_sum(total_gen_g_loss), step=epoch)
-            tf.summary.scalar('total_gen_f_loss', tf.reduce_sum(total_gen_f_loss), step=epoch)
-            tf.summary.scalar('disc_x_loss', disc_x_loss, step=epoch)
-            tf.summary.scalar('disc_y_loss', disc_y_loss, step=epoch)
+            tf.summary.scalar('X->Y Generator Loss', tf.reduce_sum(gen_g_loss), step=epoch)
+            tf.summary.scalar('Y->X Generator Loss', tf.reduce_sum(gen_f_loss), step=epoch)
+            tf.summary.scalar('Total Cycle Loss', tf.reduce_sum(total_cycle_loss), step=epoch)
+            tf.summary.scalar('Total X->Y Generator Loss', tf.reduce_sum(total_gen_g_loss), step=epoch)
+            tf.summary.scalar('Total Y->X Generator Loss', tf.reduce_sum(total_gen_f_loss), step=epoch)
+            tf.summary.scalar('Discriminator X Loss', disc_x_loss, step=epoch)
+            tf.summary.scalar('Discriminator Y Loss', disc_y_loss, step=epoch)
 
         return gen_g_loss, gen_f_loss, total_cycle_loss, total_gen_g_loss, total_gen_f_loss, \
                disc_x_loss, disc_y_loss
@@ -357,13 +358,13 @@ class CycleGAN(GAN):
 
                 # Performance metrics from step into dict
                 # Note - must be done outside self.train_step() as numpy operations do not work in tf.function
-                self.model_metrics['gen_g_loss'].append(tf.reduce_sum(gen_g_loss, axis=None).numpy().tolist())
-                self.model_metrics['gen_f_loss'].append(tf.reduce_sum(gen_f_loss, axis=None).numpy().tolist())
-                self.model_metrics['total_cycle_loss'].append(tf.reduce_sum(total_cycle_loss, axis=None).numpy().tolist())
-                self.model_metrics['total_gen_g_loss'].append(tf.reduce_sum(total_gen_g_loss, axis=None).numpy().tolist())
-                self.model_metrics['total_gen_f_loss'].append(tf.reduce_sum(total_gen_f_loss, axis=None).numpy().tolist())
-                self.model_metrics['disc_x_loss'].append(tf.reduce_sum(disc_x_loss, axis=None).numpy().tolist())
-                self.model_metrics['disc_y_loss'].append(tf.reduce_sum(disc_y_loss, axis=None).numpy().tolist())
+                self.model_metrics['X->Y Generator Loss'].append(tf.reduce_sum(gen_g_loss, axis=None).numpy().tolist())
+                self.model_metrics['Y->X Generator Loss'].append(tf.reduce_sum(gen_f_loss, axis=None).numpy().tolist())
+                self.model_metrics['Total Cycle Loss'].append(tf.reduce_sum(total_cycle_loss, axis=None).numpy().tolist())
+                self.model_metrics['Total X->Y Generator Loss'].append(tf.reduce_sum(total_gen_g_loss, axis=None).numpy().tolist())
+                self.model_metrics['Total Y->X Generator Loss'].append(tf.reduce_sum(total_gen_f_loss, axis=None).numpy().tolist())
+                self.model_metrics['Discriminator X Loss'].append(tf.reduce_sum(disc_x_loss, axis=None).numpy().tolist())
+                self.model_metrics['Discriminator Y Loss'].append(tf.reduce_sum(disc_y_loss, axis=None).numpy().tolist())
 
             # Every 5 epochs save weights and generate predicted image
             if (epoch + 1) % 5 == 0:
@@ -432,6 +433,25 @@ def parse_opt():
                         required='--predict' in sys.argv)
     return parser.parse_args()
 
+def make_fig(df, title, output_path):
+    '''
+    Creates two line graphs in same figure using Matplotlib. Outputs as PNG to disk.
+    :param df: pd.Series
+    :param title: str, title of figure. Also used to name PNG plot when outputted to disk.
+    :param output_path: str, path to output PNG
+    :return: None, writes figure to disk
+    '''
+    plt.figure(figsize=(10, 8), dpi=80)
+    plt.plot(df, alpha=0.7, label='Raw')
+    plt.plot(df.ewm(alpha=0.1).mean(), color='red', linewidth=2, label='Weighted Mean')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.title(f'CycleGAN {title}')
+    os.makedirs(output_path, exist_ok=True)  # Creates output directory if not existing
+    plt.savefig(os.path.join(output_path, f'{title}.png'), dpi=80)
+    plt.close()
+
 def main(opt):
     """
     :param opt: argparse.Namespace
@@ -497,7 +517,13 @@ def main(opt):
         with open(os.path.join(log_dir, 'metrics.json'), 'w') as f:
             json.dump(cgan.model_metrics, f)
 
-        # TODO - add code that outputs performance metrics as PNG
+        # Output performance metrics figures
+        for key in cgan.model_metrics.keys():
+            df = pd.DataFrame(cgan.model_metrics[key]).reset_index()
+            obs_per_epoch = len(df) / 3  # Number of data points per epoch = N_X-1
+            df['epoch'] = ((df['index'] // obs_per_epoch) + 1).astype('int')
+            agg = df.groupby('epoch')[0].mean()  # mean loss by epoch across obs
+            make_fig(agg, title=key, output_path=os.path.join(full_path, 'figs'))
 
     print("Done.")
 
