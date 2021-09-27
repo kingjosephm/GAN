@@ -270,10 +270,10 @@ class Pix2Pix(GAN):
 
         # Model metrics to use in tensorboard
         with summary_writer.as_default():
-            tf.summary.scalar('Generator Total Loss', gen_total_loss, step=step // 100)
-            tf.summary.scalar('Generator Loss (Primary)', gen_gan_loss, step=step // 100)
-            tf.summary.scalar('Generator Loss (Secondary)', gen_gan_loss2, step=step // 100) # L1 loss or SSIM
-            tf.summary.scalar('Discriminator Loss', disc_loss, step=step // 100)
+            tf.summary.scalar('Generator Total Loss', gen_total_loss, step=step // 100000)
+            tf.summary.scalar('Generator Loss (Primary)', gen_gan_loss, step=step // 100000)
+            tf.summary.scalar('Generator Loss (Secondary)', gen_gan_loss2, step=step // 100000) # L1 loss or SSIM
+            tf.summary.scalar('Discriminator Loss', disc_loss, step=step // 100000)
 
         return gen_total_loss, gen_gan_loss, gen_gan_loss2, disc_loss  # return model metrics as unable to convert to numpy within @tf.function
 
@@ -426,7 +426,7 @@ def make_fig(df, title, output_path):
     plt.figure(figsize=(10, 8), dpi=80)
     plt.plot(df, alpha=0.7, label='Raw')
     plt.plot(df.ewm(alpha=0.1).mean(), color='red', linewidth=2, label='Weighted Mean')
-    plt.xlabel('Step (100s)')
+    plt.xlabel('Step (100,000s)')
     plt.ylabel('Loss')
     plt.legend()
     plt.title(f'Pix2Pix {title}')
@@ -498,7 +498,7 @@ def main(opt):
         # Output performance metrics figures
         for key in p2p.model_metrics.keys():
             df = pd.DataFrame(p2p.model_metrics[key]).reset_index()
-            df['index'] = df['index'] / 100  # scale by 100
+            df['index'] = df['index'] / 100000  # scale by 100,000
             df.set_index('index', inplace=True)
             if len(df) > 1000:  # Makes figure more interpretable with large number of steps
                 df = df.sample(n=1000, random_state=123)
