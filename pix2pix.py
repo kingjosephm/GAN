@@ -258,7 +258,7 @@ class Pix2Pix(GAN):
             disc_generated_output = self.discriminator([input_image, gen_output], training=True)
 
             gen_total_loss, gen_gan_loss, gen_gan_loss2 = self.generator_loss(disc_generated_output, gen_output, target, input_image)
-            disc_loss = self.discriminator_loss(disc_real_output, disc_generated_output, 0.5)  # TF example lacked, but original code divides by 2, see https://github.com/phillipi/pix2pix/blob/89ff2a81ce441fbe1f1b13eca463b87f1e539df8/train.lua#L254
+            disc_loss = self.discriminator_loss(disc_real_output, disc_generated_output)  # TF example lacked, but original code divides by 2, see https://github.com/phillipi/pix2pix/blob/89ff2a81ce441fbe1f1b13eca463b87f1e539df8/train.lua#L254
 
         generator_gradients = gen_tape.gradient(gen_total_loss, self.generator.trainable_variables)
         discriminator_gradients = disc_tape.gradient(disc_loss, self.discriminator.trainable_variables)
