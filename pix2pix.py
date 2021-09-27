@@ -301,7 +301,7 @@ class Pix2Pix(GAN):
 
         plot_path = os.path.join(output_path, 'test_images')
         os.makedirs(plot_path, exist_ok=True) # dir should not exist
-        plt.savefig(os.path.join(plot_path, f'step_{step}.png'), dpi=80)
+        plt.savefig(os.path.join(plot_path, f'step_{step}.png'), dpi=200)
         plt.close()
 
     def fit(self, train_ds, test_ds, steps, summary_writer, output_path, checkpoint_manager=None, save_weights=True):
@@ -375,14 +375,14 @@ class Pix2Pix(GAN):
 
             plot_path = os.path.join(output_path, 'prediction_images')
             os.makedirs(plot_path, exist_ok=True)  # dir should not exist
-            plt.savefig(os.path.join(plot_path, f'img_{img_nr}.png'), dpi=80)
+            plt.savefig(os.path.join(plot_path, f'img_{img_nr}.png'), dpi=200)
             plt.close()
 
             # Just prediction image
             plt.figure(figsize=(6, 6))
             plt.imshow(prediction[0] * 0.5 + 0.5)
             plt.axis('off')
-            plt.savefig(os.path.join(plot_path, f'prediction_{img_nr}.png'), dpi=80)
+            plt.savefig(os.path.join(plot_path, f'prediction_{img_nr}.png'), dpi=200)
             plt.close()
             img_nr += 1
 
@@ -431,7 +431,7 @@ def make_fig(df, title, output_path):
     plt.legend()
     plt.title(f'Pix2Pix {title}')
     os.makedirs(output_path, exist_ok=True)  # Creates output directory if not existing
-    plt.savefig(os.path.join(output_path, f'{title}.png'), dpi=80)
+    plt.savefig(os.path.join(output_path, f'{title}.png'), dpi=200)
     plt.close()
 
 
