@@ -258,7 +258,7 @@ class CycleGAN(GAN):
         else: # predict mode, don't make subdir
             plot_path = output_path
         os.makedirs(plot_path, exist_ok=True) # dir should not exist
-        plt.savefig(os.path.join(plot_path, f"{img_file_prefix}_{image_nr}.png"), dpi=80)
+        plt.savefig(os.path.join(plot_path, f"{img_file_prefix}_{image_nr}.png"), dpi=200)
         plt.close()
 
     @tf.function
@@ -399,7 +399,7 @@ class CycleGAN(GAN):
             plt.figure(figsize=(6, 6))
             plt.imshow(prediction[0] * 0.5 + 0.5)
             plt.axis('off')
-            plt.savefig(os.path.join(output_path, f'prediction_{img_nr}.png'), dpi=80)
+            plt.savefig(os.path.join(output_path, f'prediction_{img_nr}.png'), dpi=200)
             plt.close()
             img_nr += 1
 
@@ -436,20 +436,20 @@ def parse_opt():
 def make_fig(df, title, output_path):
     '''
     Creates two line graphs in same figure using Matplotlib. Outputs as PNG to disk.
-    :param df: pd.Series
+    :param df: pd.Series, mean loss by epoch
     :param title: str, title of figure. Also used to name PNG plot when outputted to disk.
     :param output_path: str, path to output PNG
     :return: None, writes figure to disk
     '''
     plt.figure(figsize=(10, 8), dpi=80)
-    plt.plot(df, alpha=0.7, label='Raw')
-    plt.plot(df.ewm(alpha=0.1).mean(), color='red', linewidth=2, label='Weighted Mean')
+    plt.plot(df, alpha=0.7, label='Epoch Mean')
+    plt.plot(df.ewm(alpha=0.1).mean(), color='red', linewidth=2, label='Weighted Epoch Mean')
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
     plt.legend()
     plt.title(f'CycleGAN {title}')
     os.makedirs(output_path, exist_ok=True)  # Creates output directory if not existing
-    plt.savefig(os.path.join(output_path, f'{title}.png'), dpi=80)
+    plt.savefig(os.path.join(output_path, f'{title}.png'), dpi=200)
     plt.close()
 
 def main(opt):
@@ -520,7 +520,7 @@ def main(opt):
         # Output performance metrics figures
         for key in cgan.model_metrics.keys():
             df = pd.DataFrame(cgan.model_metrics[key]).reset_index()
-            obs_per_epoch = len(df) / 3  # Number of data points per epoch = N_X-1
+            obs_per_epoch = len(df) / cgan.config['epochs']  # Number of data points per epoch = N_X-1
             df['epoch'] = ((df['index'] // obs_per_epoch) + 1).astype('int')
             agg = df.groupby('epoch')[0].mean()  # mean loss by epoch across obs
             make_fig(agg, title=key, output_path=os.path.join(full_path, 'figs'))
