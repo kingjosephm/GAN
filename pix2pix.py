@@ -62,7 +62,7 @@ class Pix2Pix(GAN):
         """
         stacked_image = tf.stack([input_image, real_image], axis=0)
         cropped_image = tf.image.random_crop(
-            stacked_image, size=[2, height, width, 3])
+            stacked_image, size=[2, height, width, int(self.config['channels'])])
         return cropped_image[0], cropped_image[1]
 
     @tf.function()
@@ -155,6 +155,11 @@ class Pix2Pix(GAN):
             train = train.batch(self.config["global_batch_size"]).repeat()
             train = train.with_options(self.options)
 
+            # Ensure number of channels in image equals user input channel number
+            assert (train.element_spec[0].shape[-1] == int(self.config[
+                                                    'channels'])), f"Mismatching number of channels between image and user argument! Number of channels in input image is {train.element_spec[0].shape[-1]}, while user specified {self.config['channels']} channels!"
+            # Note - test, has None for channel dim at this point
+
         return train, test
 
     def Generator(self):
@@ -165,7 +170,7 @@ class Pix2Pix(GAN):
 
         with self.strategy.scope():
 
-            inputs = tf.keras.layers.Input(shape=[self.config['img_size'], self.config['img_size'], 3])
+            inputs = tf.keras.layers.Input(shape=[self.config['img_size'], self.config['img_size'], int(self.config['channels'])])
 
             down_stack = [
                 super().downsample(64, 4, apply_norm=False),  # (batch_size, 128, 128, 64)
@@ -189,7 +194,7 @@ class Pix2Pix(GAN):
             ]
 
             initializer = tf.random_normal_initializer(0., 0.02)
-            last = tf.keras.layers.Conv2DTranspose(self.config['output_channels'], 4,
+            last = tf.keras.layers.Conv2DTranspose(int(self.config['channels']), 4,
                                                    strides=2,
                                                    padding='same',
                                                    kernel_initializer=initializer,
@@ -296,7 +301,10 @@ class Pix2Pix(GAN):
             plt.subplot(1, 3, i + 1)
             plt.title(title[i])
             # Getting the pixel values in the [0, 1] range to plot.
-            plt.imshow(display_list[i] * 0.5 + 0.5)
+            if self.config['channels'] == '1':
+                plt.imshow(display_list[i] * 0.5 + 0.5, cmap=plt.get_cmap('gray'))
+            else:
+                plt.imshow(display_list[i] * 0.5 + 0.5)
             plt.axis('off')
 
         plot_path = os.path.join(output_path, 'test_images')
@@ -319,6 +327,11 @@ class Pix2Pix(GAN):
         print("\nTraining...\n", flush=True)
 
         example_input, example_target = next(iter(test_ds.take(1)))
+
+        # Ensure number of channels align
+        assert (example_input.shape[-1] == int(self.config[
+                                                          'channels'])), f"Mismatching number of channels between image and user argument! Number of channels in input image is {example_input.shape[-1]}, while user specified {self.config['channels']} channels!"
+
         start = time.time()
 
         for step, (input_image, target) in train_ds.repeat().take(steps).enumerate():
@@ -359,6 +372,10 @@ class Pix2Pix(GAN):
 
         img_nr = 0
         for input, target in pred_ds:
+
+            # Ensure number of channels align
+            assert (input.shape[-1] == int(self.config['channels'])), f"Mismatching number of channels between image and user argument! Number of channels in input image is {input.shape[-1]}, while user specified {self.config['channels']} channels!"
+
             prediction = self.generator(input, training=False)
 
             # Three image subplots
@@ -370,7 +387,10 @@ class Pix2Pix(GAN):
                 plt.subplot(1, 3, i + 1)
                 plt.title(title[i])
                 # Getting the pixel values in the [0, 1] range to plot.
-                plt.imshow(display_list[i] * 0.5 + 0.5)
+                if self.config['channels'] == '1':
+                    plt.imshow(display_list[i] * 0.5 + 0.5, cmap=plt.get_cmap('gray'))
+                else:
+                    plt.imshow(display_list[i] * 0.5 + 0.5)
                 plt.axis('off')
 
             plot_path = os.path.join(output_path, 'prediction_images')
@@ -380,7 +400,10 @@ class Pix2Pix(GAN):
 
             # Just prediction image
             plt.figure(figsize=(6, 6))
-            plt.imshow(prediction[0] * 0.5 + 0.5)
+            if self.config['channels'] == '1':
+                plt.imshow(prediction[0] * 0.5 + 0.5, cmap=plt.get_cmap('gray'))
+            else:
+                plt.imshow(prediction[0] * 0.5 + 0.5, cmap=plt.get_cmap('gray'))
             plt.axis('off')
             plt.savefig(os.path.join(plot_path, f'prediction_{img_nr}.png'), dpi=200)
             plt.close()
@@ -394,7 +417,7 @@ def parse_opt():
     parser.add_argument('--img-size', type=int, default=256, help='image size h,w')
     parser.add_argument('--batch-size', type=int, default=1, help='batch size per replica')
     parser.add_argument('--buffer-size', type=int, default=400, help='buffer size')
-    parser.add_argument('--output-channels', type=int, default=3, help='number of color channels to output')
+    parser.add_argument('--channels', type=str, default='1', choices=['1', '3'], help='number of color channels to read in and output')
     parser.add_argument('--no-log', action='store_true', help='turn off script logging, e.g. for CLI debugging')
     parser.add_argument('--generator-loss', type=str, default='l1', choices=['l1', 'ssim'], help='combined generator loss function')
     # Mode
@@ -467,7 +490,7 @@ def main(opt):
 
     if opt.predict: # if predict mode
         prediction_dataset, _ = p2p.image_pipeline(predict=True)
-        checkpoint.restore(tf.train.latest_checkpoint(opt.weights)).expect_partial()
+        checkpoint.restore(tf.train.latest_checkpoint(opt.weights)).expect_partial()  # Note - if crashes here this b/c mismatch in channel size between weights and instantiated Pix2Pix class
         p2p.predict(prediction_dataset, full_path)
 
     if opt.train: # if train mode

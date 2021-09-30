@@ -1,3 +1,4 @@
+import pdb
 import time
 import os
 import random
@@ -25,8 +26,8 @@ class CycleGAN(GAN):
 
     def __init__(self, config):
         super().__init__(config)
-        self.generator_g = self.Generator(self.config['output_channels'], norm_type='instancenorm')
-        self.generator_f = self.Generator(self.config['output_channels'], norm_type='instancenorm')
+        self.generator_g = self.Generator(int(self.config['channels']), norm_type='instancenorm')
+        self.generator_f = self.Generator(int(self.config['channels']), norm_type='instancenorm')
         self.discriminator_x = super().Discriminator(norm_type='instancenorm', target=False)
         self.discriminator_y = super().Discriminator(norm_type='instancenorm', target=False)
         self.generator_g_optimizer = super().optimizer(learning_rate=self.config['learning_rate'], beta_1=self.config['beta_1'], beta_2=self.config['beta_2'])
@@ -49,7 +50,7 @@ class CycleGAN(GAN):
         :param width:
         :return:
         """
-        return tf.image.random_crop(image, size=[height, width, 3])
+        return tf.image.random_crop(image, size=[height, width, int(self.config['channels'])])
 
     def random_jitter(self, image):
         """
@@ -140,13 +141,19 @@ class CycleGAN(GAN):
             train_Y = train_Y.shuffle(self.config['buffer_size'])
             train_X = train_X.batch(self.config["global_batch_size"])
             train_Y = train_Y.batch(self.config["global_batch_size"])
+
+            # Ensure channels align
+            assert (train_X.element_spec.shape[-1] == int(self.config['channels'])), f"Mismatching number of channels between image and user argument! Number of channels in input image is {train_X.element_spec.shape[-1]}, while user specified {self.config['channels']} channels!"
+            assert (train_Y.element_spec.shape[-1] == int(self.config['channels'])), f"Mismatching number of channels between image and user argument! Number of channels in target image is {train_Y.element_spec.shape[-1]}, while user specified {self.config['channels']} channels!"
+            # Note - test_X, test_Y have None for channel dim at this point
+
         return train_X, train_Y, test_X
 
     def Generator(self, output_channels, norm_type='batchnorm'):
         """
         Modified u-net generator model (https://arxiv.org/abs/1611.07004).
         Args:
-          output_channels: Output channels
+          output_channels: int, Output channels
           norm_type: Type of normalization. Either 'batchnorm' or 'instancenorm'.
         Returns:
           Generator model
@@ -179,11 +186,11 @@ class CycleGAN(GAN):
             last = tf.keras.layers.Conv2DTranspose(
                 output_channels, 4, strides=2,
                 padding='same', kernel_initializer=initializer,
-                activation='tanh')  # (bs, 256, 256, 3)
+                activation='tanh')  # (bs, 256, 256, n_channels)
 
             concat = tf.keras.layers.Concatenate()
 
-            inputs = tf.keras.layers.Input(shape=[None, None, 3])
+            inputs = tf.keras.layers.Input(shape=[None, None, int(self.config['channels'])])
             x = inputs
 
             # Downsampling through the model
@@ -250,7 +257,10 @@ class CycleGAN(GAN):
             plt.subplot(1, 2, i + 1)
             plt.title(title[i])
             # getting the pixel values between [0, 1] to plot it.
-            plt.imshow(display_list[i] * 0.5 + 0.5)
+            if self.config['channels'] == '1':
+                plt.imshow(display_list[i] * 0.5 + 0.5, cmap=plt.get_cmap('gray'))
+            else:
+                plt.imshow(display_list[i] * 0.5 + 0.5)
             plt.axis('off')
 
         if img_file_prefix == 'epoch': # train mode, make subdir
@@ -346,6 +356,9 @@ class CycleGAN(GAN):
         print("\nTraining...\n", flush=True)
 
         example_X = next(iter(test_X.take(1)))
+
+        assert (example_X.shape[-1] == int(self.config['channels'])), f"Mismatching number of channels between image and user argument! Number of channels in input image is {example_X.shape[-1]}, while user specified {self.config['channels']} channels!"
+
         start = time.time()
 
         for epoch in range(epochs):
@@ -388,18 +401,26 @@ class CycleGAN(GAN):
         """
         print("\nRendering images using pretrained weights\n")
 
+        plot_path = os.path.join(output_path, 'prediction_images')
+        os.makedirs(plot_path)
+
         img_nr = 0
         for image in pred_ds:
 
+            assert (image.shape[-1] == int(self.config['channels'])), f"Mismatching number of channels between image and user argument! Number of channels in input image is {image.shape[-1]}, while user specified {self.config['channels']} channels!"
+
             # Output combined image
-            self.generate_images(self.generator_g, image, img_nr, output_path, img_file_prefix='img')
+            self.generate_images(self.generator_g, image, img_nr, plot_path, img_file_prefix='img')
 
             # Just prediction image
             prediction = self.generator_g(image, training=False)
             plt.figure(figsize=(6, 6))
-            plt.imshow(prediction[0] * 0.5 + 0.5)
+            if self.config['channels'] == '1':
+                plt.imshow(prediction[0] * 0.5 + 0.5, cmap=plt.get_cmap('gray'))
+            else:
+                plt.imshow(prediction[0] * 0.5 + 0.5)
             plt.axis('off')
-            plt.savefig(os.path.join(output_path, f'prediction_{img_nr}.png'), dpi=200)
+            plt.savefig(os.path.join(plot_path, f'prediction_{img_nr}.png'), dpi=200)
             plt.close()
             img_nr += 1
 
@@ -411,7 +432,7 @@ def parse_opt():
     parser.add_argument('--img-size', type=int, default=256, help='image size h,w')
     parser.add_argument('--batch-size', type=int, default=1, help='batch size per replica')
     parser.add_argument('--buffer-size', type=int, default=1000, help='buffer size')
-    parser.add_argument('--output-channels', type=int, default=3, help='number of color channels to output')
+    parser.add_argument('--channels', type=str, default='1', choices=['1', '3'], help='number of color channels to read in and output')
     parser.add_argument('--no-log', action='store_true', help='turn off script logging, e.g. for CLI debugging')
     parser.add_argument('--generator-loss', type=str, default='l1', choices=['l1', 'ssim'], help='combined generator loss function')
     # Mode
@@ -488,7 +509,7 @@ def main(opt):
 
     if opt.predict: # if predict mode
         prediction_dataset, _, _ = cgan.image_pipeline(predict=True)
-        checkpoint.restore(tf.train.latest_checkpoint(opt.weights)).expect_partial()
+        checkpoint.restore(tf.train.latest_checkpoint(opt.weights)).expect_partial()  # Note - if crashes here this b/c mismatch in channel size between weights and instantiated CycleGAN class
         cgan.predict(prediction_dataset, full_path)
 
     if opt.train: # if train mode

@@ -90,6 +90,7 @@ def concat_images(path, output_path, greyscale=True, resize_width=None, resize_h
 def load(image_file, greyscale=True):
     """
     :param image_file: str, path to image
+    :param greyscale: bool, whether or not to output greyscale or color images for both thermal and visible images
     :return: tensorflow.python.framework.ops.EagerTensor
     """
     # Read and decode an image file to a uint8 tensor

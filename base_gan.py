@@ -155,11 +155,11 @@ class GAN(ABC):
         with self.strategy.scope():
             initializer = tf.random_normal_initializer(0., 0.02)
 
-            inp = tf.keras.layers.Input(shape=[None, None, 3], name='input_image')
+            inp = tf.keras.layers.Input(shape=[None, None, int(self.config['channels'])], name='input_image')
             x = inp
 
             if target:
-                tar = tf.keras.layers.Input(shape=[None, None, 3], name='target_image')
+                tar = tf.keras.layers.Input(shape=[None, None, int(self.config['channels'])], name='target_image')
                 x = tf.keras.layers.concatenate([inp, tar])  # (bs, 256, 256, channels*2)
 
             down1 = self.downsample(64, 4, norm_type, False)(x)  # (bs, 128, 128, 64)
