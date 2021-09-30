@@ -5,14 +5,14 @@ TODO
 The shell script `driver.sh` automates copying the latest development scripts from the local machine onto the GPU server. It prompts user's credential once, saving this as a variable. It also prompts user's password twice; the first time is to transfer the scripts onto the GPU server, and the second time is to ssh into the server itself. Once logged into the server the user should execute the docker commands (below) to run the scripts.
 
 # Data
-There are two sets of paired images for the Pix2Pix model. 1) a processed 256x256 BW/thermal image set located on the GPU server under `/home/kingj/train` and `/home/kingj/test.tar.xz`. 2) a set of full-resolution (640w x 512h) paired images are located at `home/kingj/side-by-side_train`.
+There are two sets of paired images for the Pix2Pix model. 1) A processed 256x256 BW/thermal image set located on the GPU server under `/home/kingj/train` and `/home/kingj/test.tar.xz`. 2) A b/w set of full-resolution (640w x 512h) paired images are located at `home/kingj/side-by-side_train`.
 
-For the CycleGAN model these same images are stored separately under thermal and visible subdirectories in a parent directory located at `home/kingj/separated`.
+For the CycleGAN model these same images are stored separately under thermal and visible subdirectories in a parent directory located at `home/kingj/separated_bw`.
 
 # Docker
 To train the models, we've migrated the data described above into Docker volumes. Model output is also stored in a Docker volume.
 ## *Data*
-### 1) Paired processed training images
+### 1) Paired b/w processed training images for Pix2Pix
 These images are stored in a volume called `MERGEN_GAN_train_data`. They were migrated into this volume via:
 
     docker volume create --name MERGEN_GAN_train_data \
@@ -20,10 +20,10 @@ These images are stored in a volume called `MERGEN_GAN_train_data`. They were mi
       --opt device=/home/kingj/train \
       --opt o=bind
 
-### 2) Paired full-resolution training images
+### 2) Paired b/w full-resolution training images for Pix2Pix
 These are located in a volume called `MERGEN_GAN_train_data_full`.
 
-### Unpaired training images for CycleGAN
+### Unpaired b/w training images for CycleGAN
 Unpaired images (i.e. separated into thermal and visible subdirs) are located in a volume called `MERGEN_GAN_train_separated_full`.
 
 ## *Output*
@@ -49,9 +49,9 @@ Because we want to mount both data and scripts volumes we call `--mount` twice. 
 
 Once inside the container has started, enter the command line prompt, e.g.:
 
-    $ python3 ./scripts/pix2pix.py --train --data=data --output=output --no-save-weights --steps=100
+    $ python3 <script> [options]
 
-## *Option 2*
+## *Option 2* (preferred)
 Initialize a container to run a Python script and remove the container at the end. Volumes exist independent of container instances so the output will be stored in `Output`.
 
     docker run -it \
@@ -63,4 +63,30 @@ Initialize a container to run a Python script and remove the container at the en
       --mount source=MERGEN_GAN_output,target=/output \
       --gpus device=GPU-0c5076b3-fe4a-0cd8-e4b7-71c2037933c0 \
       king0759/tf2_gpu_jupyter_mpl:v1 \
-      python3 ./scripts/pix2pix.py --train --data=data --output=output --no-save-weights --steps=100000 --generator-loss='l1'
+      python3 <script> [options]
+
+# Example: Execute Pix2Pix script
+    
+    docker run -it \
+        --name p2p_full \
+        -d --rm \
+        --mount type=bind,source=/home/kingj/scripts,target=/scripts \
+        --mount source=MERGEN_GAN_train_data_full,target=/data \
+        --mount source=MERGEN_GAN_output,target=/output \
+        --gpus device=GPU-3c51591d-cfdb-f87c-ece8-8dcfdc81e67a \
+        king0759/tf2_gpu_jupyter_mpl:v1 python3 ./scripts/pix2pix.py \
+        --train --data=data --output=output --save-weights --steps=10000000 \
+        --generator-loss='l1' --img-size=256
+
+# Example: Execute CycleGAN script
+
+    docker run -it \
+        --name cgan \
+        -d --rm \
+        --mount type=bind,source=/home/kingj/scripts,target=/scripts \
+        --mount source=MERGEN_GAN_train_separated_full,target=/data \
+        --mount source=MERGEN_GAN_output,target=/output \
+        --gpus device=GPU-0c5076b3-fe4a-0cd8-e4b7-71c2037933c0 \
+        king0759/tf2_gpu_jupyter_mpl:v1 python3 ./scripts/cycle_gan.py --train \
+        --input-images=data/thermal --target-images=data/visible \
+        --output=output --save-weights --epochs=200 --img-size=256
