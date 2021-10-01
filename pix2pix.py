@@ -275,10 +275,10 @@ class Pix2Pix(GAN):
 
         # Model metrics to use in tensorboard
         with summary_writer.as_default():
-            tf.summary.scalar('Generator Total Loss', gen_total_loss, step=step // 100000)
-            tf.summary.scalar('Generator Loss (Primary)', gen_gan_loss, step=step // 100000)
-            tf.summary.scalar('Generator Loss (Secondary)', gen_gan_loss2, step=step // 100000) # L1 loss or SSIM
-            tf.summary.scalar('Discriminator Loss', disc_loss, step=step // 100000)
+            tf.summary.scalar('Generator Total Loss', gen_total_loss, step=step // 1000)
+            tf.summary.scalar('Generator Loss (Primary)', gen_gan_loss, step=step // 1000)
+            tf.summary.scalar('Generator Loss (Secondary)', gen_gan_loss2, step=step // 1000) # L1 loss or SSIM
+            tf.summary.scalar('Discriminator Loss', disc_loss, step=step // 1000)
 
         return gen_total_loss, gen_gan_loss, gen_gan_loss2, disc_loss  # return model metrics as unable to convert to numpy within @tf.function
 
@@ -343,10 +343,10 @@ class Pix2Pix(GAN):
 
             # Performance metrics from step into dict
             # Note - must be done outside self.train_step() as numpy operations do not work in tf.function
-            self.model_metrics['Generator Total Loss'].append(tf.reduce_sum(gen_total_loss, axis=None).numpy().tolist())
-            self.model_metrics['Generator Loss (Primary)'].append(tf.reduce_sum(gen_gan_loss, axis=None).numpy().tolist())
-            self.model_metrics['Generator Loss (Secondary)'].append(tf.reduce_sum(gen_gan_loss2, axis=None).numpy().tolist())
-            self.model_metrics['Discriminator Loss'].append(tf.reduce_sum(disc_loss, axis=None).numpy().tolist())
+            self.model_metrics['Generator Total Loss'].append(tf.reduce_sum(gen_total_loss, axis=None).numpy().tolist() // 1000)
+            self.model_metrics['Generator Loss (Primary)'].append(tf.reduce_sum(gen_gan_loss, axis=None).numpy().tolist() // 1000)
+            self.model_metrics['Generator Loss (Secondary)'].append(tf.reduce_sum(gen_gan_loss2, axis=None).numpy().tolist() // 1000)
+            self.model_metrics['Discriminator Loss'].append(tf.reduce_sum(disc_loss, axis=None).numpy().tolist() // 1000)
 
             # Save (checkpoint) the model every 5k steps and at end
             # Also saves generated training image
@@ -376,7 +376,7 @@ class Pix2Pix(GAN):
             # Ensure number of channels align
             assert (input.shape[-1] == int(self.config['channels'])), f"Mismatching number of channels between image and user argument! Number of channels in input image is {input.shape[-1]}, while user specified {self.config['channels']} channels!"
 
-            prediction = self.generator(input, training=False)
+            prediction = self.generator(input, training=True)  # set to training=True as otherwise training not cumulative
 
             # Three image subplots
             plt.figure(figsize=(15, 6))

@@ -413,7 +413,7 @@ class CycleGAN(GAN):
             self.generate_images(self.generator_g, image, img_nr, plot_path, img_file_prefix='img')
 
             # Just prediction image
-            prediction = self.generator_g(image, training=False)
+            prediction = self.generator_g(image, training=True)
             plt.figure(figsize=(6, 6))
             if self.config['channels'] == '1':
                 plt.imshow(prediction[0] * 0.5 + 0.5, cmap=plt.get_cmap('gray'))
