@@ -129,13 +129,13 @@ class CycleGAN(GAN):
             train_Y = tf.data.Dataset.from_tensor_slices([self.config['target_images'] + '/' + i for i in train_Y])
 
             # process test images
-            test_X = test_X.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
-            test_X = test_X.cache().shuffle(self.config['buffer_size'])
+            test_X = test_X.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE).cache()
+            test_X = test_X.shuffle(self.config['buffer_size'])
             test_X = test_X.batch(self.config["global_batch_size"])
 
             # process training images
-            train_X = train_X.cache().map(self.process_images_train, num_parallel_calls=tf.data.AUTOTUNE)
-            train_Y = train_Y.cache().map(self.process_images_train, num_parallel_calls=tf.data.AUTOTUNE)
+            train_X = train_X.map(self.process_images_train, num_parallel_calls=tf.data.AUTOTUNE).cache()
+            train_Y = train_Y.map(self.process_images_train, num_parallel_calls=tf.data.AUTOTUNE).cache()
             train_X = train_X.shuffle(self.config['buffer_size'])
             train_Y = train_Y.shuffle(self.config['buffer_size'])
             train_X = train_X.batch(self.config["global_batch_size"])
