@@ -106,12 +106,27 @@ class CycleGAN(GAN):
 
         if predict:  # all images in `train` used for prediction; they're not training images, only kept for consistency
             assert(contents_X), "No JPEG or PNG images found in input image directory!"
-            train_X = tf.data.Dataset.from_tensor_slices([self.config['input_images'] + '/' + i for i in contents_X]) # resize all to same dims in case images different sizes
-            train_X = train_X.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
-            train_X = train_X.shuffle(self.config['buffer_size'])
-            train_X = train_X.batch(self.config["global_batch_size"])
-            train_Y = None
-            test_X = None
+
+            if self.config['matched_images'] is None:  # original setup as in main branch
+                train_X = tf.data.Dataset.from_tensor_slices([self.config['input_images'] + '/' + i for i in contents_X])
+                train_X = train_X.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
+                train_X = train_X.shuffle(self.config['buffer_size'])
+                train_X = train_X.batch(self.config["global_batch_size"])
+                train_Y = None
+                test_X = None
+
+            else:  # if matched images, where matches are true images
+                contents_matched = sorted([i for i in os.listdir(self.config['matched_images']) if 'png' in i or 'jpg' in i])
+                assert (len(set(contents_X).intersection(contents_matched)) == len(contents_X)), "Input and target image mismatch! Some target or input images lack their match!"
+
+                train_X = tf.data.Dataset.from_tensor_slices(sorted([self.config['input_images'] + '/' + i for i in contents_X])) # Relies on sort order for matching
+                train_X = train_X.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
+                train_X = train_X.batch(self.config["global_batch_size"])
+
+                train_Y = tf.data.Dataset.from_tensor_slices(sorted([self.config['matched_images'] + '/' + i for i in contents_matched])) # Relies on sort order for matching
+                train_Y = train_Y.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
+                train_Y = train_Y.batch(self.config["global_batch_size"])
+                test_X = None
 
         else:  # if train mode, break into train/test
             assert(len(contents_X) >= 2), f"Insufficient number of training examples in input image directory! " \
@@ -238,23 +253,28 @@ class CycleGAN(GAN):
             loss = tf.reduce_mean(tf.abs(real_image - same_image))
             return self.config['lambda'] * 0.5 * loss
 
-    def generate_images(self, model, test_input, image_nr, output_path, img_file_prefix='epoch'):
+    def generate_images(self, model, test_input, image_nr, output_path, img_file_prefix='epoch', true_image=None):
         """
         :param model:
         :param test_input:
         :param image_nr: int, either epoch number (train only) of image identifier number (predict mode)
         :param output_path:
         :param img_file_prefix: str, output image file suffix, whether 'epoch' (train) or 'img' (predict)
+        :param true_image: array-like or None, matched true image (optional)
         :return:
         """
         prediction = model(test_input, training=True)
         plt.figure(figsize=(12, 6))
 
-        display_list = [test_input[0], prediction[0]]
-        title = ['Input Image', 'Predicted Image']
+        if true_image is None:
+            display_list = [test_input[0], prediction[0]]
+            title = ['Input Image', 'Predicted Image']
+        else:
+            display_list = [test_input[0], true_image[0], prediction[0]]
+            title = ['Input Image', 'Ground Truth', 'Predicted Image']
 
-        for i in range(2):
-            plt.subplot(1, 2, i + 1)
+        for i in range(len(display_list)):
+            plt.subplot(1, len(display_list), i + 1)
             plt.title(title[i])
             # getting the pixel values between [0, 1] to plot it.
             if self.config['channels'] == '1':
@@ -262,6 +282,7 @@ class CycleGAN(GAN):
             else:
                 plt.imshow(display_list[i] * 0.5 + 0.5)
             plt.axis('off')
+            plt.tight_layout()
 
         if img_file_prefix == 'epoch': # train mode, make subdir
             plot_path = os.path.join(output_path, 'test_images')
@@ -393,9 +414,10 @@ class CycleGAN(GAN):
             print('Cumulative training duration at epoch {} is {} sec\n'.format(epoch + 1, time.time() - start))
             n += 1
 
-    def predict(self, pred_ds, output_path):
+    def predict(self, pred_ds, truth_ds, output_path):
         """
-        :param pred_ds: tf.python.data.ops.dataset_ops.BatchDataset
+        :param pred_ds: tf.python.data.ops.dataset_ops.BatchDataset, input images
+        :param truth_ds: tf.python.data.ops.dataset_ops.BatchDataset, matched ground truth images
         :param output_path: str, output path for image
         :return:
         """
@@ -405,15 +427,17 @@ class CycleGAN(GAN):
         os.makedirs(plot_path)
 
         img_nr = 0
-        for image in pred_ds:
+        for pred_image, true_image in zip(pred_ds, truth_ds):
 
-            assert (image.shape[-1] == int(self.config['channels'])), f"Mismatching number of channels between image and user argument! Number of channels in input image is {image.shape[-1]}, while user specified {self.config['channels']} channels!"
+            assert (pred_image.shape[-1] == int(self.config['channels'])), f"Mismatching number of channels between image and user argument! Number of channels in input image is {pred_image.shape[-1]}, while user specified {self.config['channels']} channels!"
+            assert (true_image.shape[-1] == int(self.config['channels'])), f"Mismatching number of channels between image and user argument! Number of channels in true image is {true_image.shape[-1]}, while user specified {self.config['channels']} channels!"
+
 
             # Output combined image
-            self.generate_images(self.generator_g, image, img_nr, plot_path, img_file_prefix='img')
+            self.generate_images(self.generator_g, pred_image, img_nr, plot_path, img_file_prefix='img', true_image=true_image)
 
             # Just prediction image
-            prediction = self.generator_g(image, training=True)
+            prediction = self.generator_g(pred_image, training=True)
             plt.figure(figsize=(6, 6))
             if self.config['channels'] == '1':
                 plt.imshow(prediction[0] * 0.5 + 0.5, cmap=plt.get_cmap('gray'))
@@ -452,6 +476,7 @@ def parse_opt():
     # Predict param
     parser.add_argument('--weights', type=str, help='path to pretrained model weights for prediction',
                         required='--predict' in sys.argv)
+    parser.add_argument('--matched-images', type=str, help='path to matched images [optional]')
     return parser.parse_args()
 
 def make_fig(df, title, output_path):
@@ -508,9 +533,9 @@ def main(opt):
         json.dump(cgan.config, f)
 
     if opt.predict: # if predict mode
-        prediction_dataset, _, _ = cgan.image_pipeline(predict=True)
+        prediction_dataset, ground_truth_dataset, _ = cgan.image_pipeline(predict=True)
         checkpoint.restore(tf.train.latest_checkpoint(opt.weights)).expect_partial()  # Note - if crashes here this b/c mismatch in channel size between weights and instantiated CycleGAN class
-        cgan.predict(prediction_dataset, full_path)
+        cgan.predict(prediction_dataset, ground_truth_dataset, full_path)
 
     if opt.train: # if train mode
         train_X, train_Y, test_X = cgan.image_pipeline(predict=False)
