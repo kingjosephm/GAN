@@ -22,11 +22,12 @@ tf.config.optimizer.set_jit(True)
 # Configure distributed training across GPUs, if available
 print("Num GPUs Available: ", len(tf.config.list_physical_devices("GPU")))
 if tf.config.list_physical_devices('GPU'):
-    strategy = tf.distribute.MirroredStrategy() # uses all GPUs available in container
 
     # Limit memory usage
     for dev in tf.config.list_physical_devices('GPU'):
         tf.config.experimental.set_memory_growth(dev, True)
+
+    strategy = tf.distribute.MirroredStrategy()  # uses all GPUs available in container
 
 else:  # Use the Default Strategy
     strategy = tf.distribute.OneDeviceStrategy('/CPU:0')  # use for debugging
