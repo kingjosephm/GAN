@@ -37,18 +37,25 @@ class Pix2Pix(GAN):
                               'Generator Loss (Secondary)': [],
                               'Discriminator Loss': []}
 
-    def split_img(self, image_file):
+    def split_img(self, image_file: str):
         """
-        :param image_file:
+        :param image_file: str, full path to image file
         :return:
+            input_image - input (thermal) image, tensorflow.python.framework.ops.EagerTensor
+            real_image - target (real) image, tensorflow.python.framework.ops.EagerTensor
         """
         image = super().load(image_file)
 
         # Split each image tensor into two tensors:
         w = tf.shape(image)[1]
         w = w // 2
-        input_image = image[:, w:, :]
-        real_image = image[:, :w, :]
+
+        if self.config['input_img_orient'] == 'left':
+            input_image = image[:, :w, :]
+            real_image = image[:, w:, :]
+        else:
+            input_image = image[:, w:, :]
+            real_image = image[:, :w, :]
 
         return input_image, real_image
 
@@ -420,6 +427,7 @@ def parse_opt():
     parser.add_argument('--channels', type=str, default='1', choices=['1', '3'], help='number of color channels to read in and output')
     parser.add_argument('--no-log', action='store_true', help='turn off script logging, e.g. for CLI debugging')
     parser.add_argument('--generator-loss', type=str, default='l1', choices=['l1', 'ssim'], help='combined generator loss function')
+    parser.add_argument('--input-img-orient', type=str, default='left', choices=['left', 'right'], help='whether input image is on left (i.e. target right) or vice-versa')
     # Mode
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--train', action='store_true', help='train model using data')
