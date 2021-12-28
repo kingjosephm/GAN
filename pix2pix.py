@@ -20,14 +20,10 @@ from base_gan import GAN
 
 """
 
-# Disable TensorFlow AUTO sharding policy warning
-options = tf.data.Options()
-options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
 
 class Pix2Pix(GAN):
     def __init__(self, config):
         super().__init__(config)
-        self.options = options
         self.generator = self.Generator()
         self.discriminator = super().Discriminator(target=True)
         self.generator_optimizer = super().optimizer(learning_rate=self.config['learning_rate'], beta_1=self.config['beta_1'], beta_2=self.config['beta_2'])
@@ -136,7 +132,7 @@ class Pix2Pix(GAN):
             train = tf.data.Dataset.from_tensor_slices([self.config['data'] + '/' + i for i in contents])
             train = train.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
             train = train.shuffle(self.config['buffer_size'])
-            train = train.batch(self.config["global_batch_size"])
+            train = train.batch(self.config["batch_size"])
             test = None
 
         else:  # if train mode, break into train/test
@@ -153,14 +149,12 @@ class Pix2Pix(GAN):
             # process test images
             test = test.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
             test = test.shuffle(self.config['buffer_size'])
-            test = test.batch(self.config["global_batch_size"]).repeat()
-            test = test.with_options(self.options)
+            test = test.batch(self.config["batch_size"]).repeat()
 
             # process training images
             train = train.map(self.process_images_train, num_parallel_calls=tf.data.AUTOTUNE)
             train = train.shuffle(self.config['buffer_size'])
-            train = train.batch(self.config["global_batch_size"]).repeat()
-            train = train.with_options(self.options)
+            train = train.batch(self.config["batch_size"]).repeat()
 
             # Ensure number of channels in image equals user input channel number
             assert (train.element_spec[0].shape[-1] == int(self.config[
@@ -175,56 +169,54 @@ class Pix2Pix(GAN):
         :return: tf.keras Model class
         """
 
-        with self.strategy.scope():
+        inputs = tf.keras.layers.Input(shape=[self.config['img_size'], self.config['img_size'], int(self.config['channels'])])
 
-            inputs = tf.keras.layers.Input(shape=[self.config['img_size'], self.config['img_size'], int(self.config['channels'])])
+        down_stack = [
+            super().downsample(64, 4, apply_norm=False),  # (batch_size, 128, 128, 64)
+            super().downsample(128, 4),  # (batch_size, 64, 64, 128)
+            super().downsample(256, 4),  # (batch_size, 32, 32, 256)
+            super().downsample(512, 4),  # (batch_size, 16, 16, 512)
+            super().downsample(512, 4),  # (batch_size, 8, 8, 512)
+            super().downsample(512, 4),  # (batch_size, 4, 4, 512)
+            super().downsample(512, 4),  # (batch_size, 2, 2, 512)
+            super().downsample(512, 4),  # (batch_size, 1, 1, 512)
+        ]
 
-            down_stack = [
-                super().downsample(64, 4, apply_norm=False),  # (batch_size, 128, 128, 64)
-                super().downsample(128, 4),  # (batch_size, 64, 64, 128)
-                super().downsample(256, 4),  # (batch_size, 32, 32, 256)
-                super().downsample(512, 4),  # (batch_size, 16, 16, 512)
-                super().downsample(512, 4),  # (batch_size, 8, 8, 512)
-                super().downsample(512, 4),  # (batch_size, 4, 4, 512)
-                super().downsample(512, 4),  # (batch_size, 2, 2, 512)
-                super().downsample(512, 4),  # (batch_size, 1, 1, 512)
-            ]
+        up_stack = [
+            super().upsample(512, 4, apply_dropout=True),  # (batch_size, 2, 2, 1024)
+            super().upsample(512, 4, apply_dropout=True),  # (batch_size, 4, 4, 1024)
+            super().upsample(512, 4, apply_dropout=True),  # (batch_size, 8, 8, 1024)
+            super().upsample(512, 4),  # (batch_size, 16, 16, 1024)
+            super().upsample(256, 4),  # (batch_size, 32, 32, 512)
+            super().upsample(128, 4),  # (batch_size, 64, 64, 256)
+            super().upsample(64, 4),  # (batch_size, 128, 128, 128)
+        ]
 
-            up_stack = [
-                super().upsample(512, 4, apply_dropout=True),  # (batch_size, 2, 2, 1024)
-                super().upsample(512, 4, apply_dropout=True),  # (batch_size, 4, 4, 1024)
-                super().upsample(512, 4, apply_dropout=True),  # (batch_size, 8, 8, 1024)
-                super().upsample(512, 4),  # (batch_size, 16, 16, 1024)
-                super().upsample(256, 4),  # (batch_size, 32, 32, 512)
-                super().upsample(128, 4),  # (batch_size, 64, 64, 256)
-                super().upsample(64, 4),  # (batch_size, 128, 128, 128)
-            ]
+        initializer = tf.random_normal_initializer(0., 0.02)
+        last = tf.keras.layers.Conv2DTranspose(int(self.config['channels']), 4,
+                                               strides=2,
+                                               padding='same',
+                                               kernel_initializer=initializer,
+                                               activation='tanh')  # (batch_size, height, width, channels)
 
-            initializer = tf.random_normal_initializer(0., 0.02)
-            last = tf.keras.layers.Conv2DTranspose(int(self.config['channels']), 4,
-                                                   strides=2,
-                                                   padding='same',
-                                                   kernel_initializer=initializer,
-                                                   activation='tanh')  # (batch_size, 256, 256, 3)
+        x = inputs
 
-            x = inputs
+        # Downsampling through the model
+        skips = []
+        for down in down_stack:
+            x = down(x)
+            skips.append(x)
 
-            # Downsampling through the model
-            skips = []
-            for down in down_stack:
-                x = down(x)
-                skips.append(x)
+        skips = reversed(skips[:-1])
 
-            skips = reversed(skips[:-1])
+        # Upsampling and establishing the skip connections
+        for up, skip in zip(up_stack, skips):
+            x = up(x)
+            x = tf.keras.layers.Concatenate()([x, skip])
 
-            # Upsampling and establishing the skip connections
-            for up, skip in zip(up_stack, skips):
-                x = up(x)
-                x = tf.keras.layers.Concatenate()([x, skip])
+        x = last(x)
 
-            x = last(x)
-
-            model = tf.keras.Model(inputs=inputs, outputs=x)
+        model = tf.keras.Model(inputs=inputs, outputs=x)
 
         return model
 
@@ -237,18 +229,17 @@ class Pix2Pix(GAN):
         :param input_image:
         :return:
         """
-        with self.strategy.scope():
 
-            gan_loss = tf.reduce_sum(self.loss_obj(tf.ones_like(disc_generated_output), disc_generated_output))  * (1. / self.config['global_batch_size'])
+        gan_loss = tf.reduce_sum(self.loss_obj(tf.ones_like(disc_generated_output), disc_generated_output))
 
-            if self.config['generator_loss']=='l1':
-                # Mean absolute error
-                gan_loss2 = tf.reduce_mean(tf.abs(target - gen_output))
-            elif self.config['generator_loss']=='ssim':
-                # SSIM loss, see https://www.tensorflow.org/api_docs/python/tf/image/ssim
-                gan_loss2 = (1 - tf.reduce_sum(tf.image.ssim(input_image, target, max_val=255, filter_size=11, filter_sigma=1.5, k1=0.01, k2=0.03)))
+        if self.config['generator_loss']=='l1':
+            # Mean absolute error
+            gan_loss2 = tf.reduce_mean(tf.abs(target - gen_output))
+        else:  # ssim
+            # SSIM loss, see https://www.tensorflow.org/api_docs/python/tf/image/ssim
+            gan_loss2 = (1 - tf.reduce_sum(tf.image.ssim(input_image, target, max_val=255, filter_size=11, filter_sigma=1.5, k1=0.01, k2=0.03)))
 
-            total_gen_loss = gan_loss + (self.config['lambda'] * gan_loss2)
+        total_gen_loss = gan_loss + (self.config['lambda'] * gan_loss2)
 
         return total_gen_loss, gan_loss, gan_loss2
 

@@ -108,7 +108,7 @@ class CycleGAN(GAN):
             train_X = tf.data.Dataset.from_tensor_slices([self.config['input_images'] + '/' + i for i in contents_X]) # resize all to same dims in case images different sizes
             train_X = train_X.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
             train_X = train_X.shuffle(self.config['buffer_size'])
-            train_X = train_X.batch(self.config["global_batch_size"])
+            train_X = train_X.batch(self.config["batch_size"])
             train_Y = None
             test_X = None
 
@@ -131,15 +131,15 @@ class CycleGAN(GAN):
             # process test images
             test_X = test_X.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE).cache()
             test_X = test_X.shuffle(self.config['buffer_size'])
-            test_X = test_X.batch(self.config["global_batch_size"])
+            test_X = test_X.batch(self.config["batch_size"])
 
             # process training images
             train_X = train_X.map(self.process_images_train, num_parallel_calls=tf.data.AUTOTUNE).cache()
             train_Y = train_Y.map(self.process_images_train, num_parallel_calls=tf.data.AUTOTUNE).cache()
             train_X = train_X.shuffle(self.config['buffer_size'])
             train_Y = train_Y.shuffle(self.config['buffer_size'])
-            train_X = train_X.batch(self.config["global_batch_size"])
-            train_Y = train_Y.batch(self.config["global_batch_size"])
+            train_X = train_X.batch(self.config["batch_size"])
+            train_Y = train_Y.batch(self.config["batch_size"])
 
             # Ensure channels align
             assert (train_X.element_spec.shape[-1] == int(self.config['channels'])), f"Mismatching number of channels between image and user argument! Number of channels in input image is {train_X.element_spec.shape[-1]}, while user specified {self.config['channels']} channels!"
@@ -157,65 +157,61 @@ class CycleGAN(GAN):
         Returns:
           Generator model
         """
+        down_stack = [
+            super().downsample(64, 4, norm_type, apply_norm=False),  # (bs, 128, 128, 64)
+            super().downsample(128, 4, norm_type),  # (bs, 64, 64, 128)
+            super().downsample(256, 4, norm_type),  # (bs, 32, 32, 256)
+            super().downsample(512, 4, norm_type),  # (bs, 16, 16, 512)
+            super().downsample(512, 4, norm_type),  # (bs, 8, 8, 512)
+            super().downsample(512, 4, norm_type),  # (bs, 4, 4, 512)
+            super().downsample(512, 4, norm_type),  # (bs, 2, 2, 512)
+            super().downsample(512, 4, norm_type),  # (bs, 1, 1, 512)
+        ]
 
-        with self.strategy.scope():
+        up_stack = [
+            super().upsample(512, 4, norm_type, apply_dropout=True),  # (bs, 2, 2, 1024)
+            super().upsample(512, 4, norm_type, apply_dropout=True),  # (bs, 4, 4, 1024)
+            super().upsample(512, 4, norm_type, apply_dropout=True),  # (bs, 8, 8, 1024)
+            super().upsample(512, 4, norm_type),  # (bs, 16, 16, 1024)
+            super().upsample(256, 4, norm_type),  # (bs, 32, 32, 512)
+            super().upsample(128, 4, norm_type),  # (bs, 64, 64, 256)
+            super().upsample(64, 4, norm_type),  # (bs, 128, 128, 128)
+        ]
 
-            down_stack = [
-                super().downsample(64, 4, norm_type, apply_norm=False),  # (bs, 128, 128, 64)
-                super().downsample(128, 4, norm_type),  # (bs, 64, 64, 128)
-                super().downsample(256, 4, norm_type),  # (bs, 32, 32, 256)
-                super().downsample(512, 4, norm_type),  # (bs, 16, 16, 512)
-                super().downsample(512, 4, norm_type),  # (bs, 8, 8, 512)
-                super().downsample(512, 4, norm_type),  # (bs, 4, 4, 512)
-                super().downsample(512, 4, norm_type),  # (bs, 2, 2, 512)
-                super().downsample(512, 4, norm_type),  # (bs, 1, 1, 512)
-            ]
+        initializer = tf.random_normal_initializer(0., 0.02)
+        last = tf.keras.layers.Conv2DTranspose(
+            output_channels, 4, strides=2,
+            padding='same', kernel_initializer=initializer,
+            activation='tanh')  # (bs, height, width, n_channels)
 
-            up_stack = [
-                super().upsample(512, 4, norm_type, apply_dropout=True),  # (bs, 2, 2, 1024)
-                super().upsample(512, 4, norm_type, apply_dropout=True),  # (bs, 4, 4, 1024)
-                super().upsample(512, 4, norm_type, apply_dropout=True),  # (bs, 8, 8, 1024)
-                super().upsample(512, 4, norm_type),  # (bs, 16, 16, 1024)
-                super().upsample(256, 4, norm_type),  # (bs, 32, 32, 512)
-                super().upsample(128, 4, norm_type),  # (bs, 64, 64, 256)
-                super().upsample(64, 4, norm_type),  # (bs, 128, 128, 128)
-            ]
+        concat = tf.keras.layers.Concatenate()
 
-            initializer = tf.random_normal_initializer(0., 0.02)
-            last = tf.keras.layers.Conv2DTranspose(
-                output_channels, 4, strides=2,
-                padding='same', kernel_initializer=initializer,
-                activation='tanh')  # (bs, 256, 256, n_channels)
+        inputs = tf.keras.layers.Input(shape=[None, None, int(self.config['channels'])])
+        x = inputs
 
-            concat = tf.keras.layers.Concatenate()
+        # Downsampling through the model
+        skips = []
+        for down in down_stack:
+            x = down(x)
+            skips.append(x)
 
-            inputs = tf.keras.layers.Input(shape=[None, None, int(self.config['channels'])])
-            x = inputs
+        skips = reversed(skips[:-1])
 
-            # Downsampling through the model
-            skips = []
-            for down in down_stack:
-                x = down(x)
-                skips.append(x)
+        # Upsampling and establishing the skip connections
+        for up, skip in zip(up_stack, skips):
+            x = up(x)
+            x = concat([x, skip])
 
-            skips = reversed(skips[:-1])
+        x = last(x)
 
-            # Upsampling and establishing the skip connections
-            for up, skip in zip(up_stack, skips):
-                x = up(x)
-                x = concat([x, skip])
-
-            x = last(x)
-
-            return tf.keras.Model(inputs=inputs, outputs=x)
+        return tf.keras.Model(inputs=inputs, outputs=x)
 
     def generator_loss(self, generated):
         """
         :param generated:
         :return:
         """
-        with self.strategy.scope():
-            return self.loss_obj(tf.ones_like(generated), generated)
+        return self.loss_obj(tf.ones_like(generated), generated)
 
     def calc_cycle_loss(self, real_image, cycled_image):
         """
@@ -223,9 +219,8 @@ class CycleGAN(GAN):
         :param cycled_image:
         :return:
         """
-        with self.strategy.scope():
-            loss1 = tf.reduce_mean(tf.abs(real_image - cycled_image))
-            return loss1 * self.config['lambda']
+        loss1 = tf.reduce_mean(tf.abs(real_image - cycled_image))
+        return loss1 * self.config['lambda']
 
     def identity_loss(self, real_image, same_image):
         """
@@ -233,9 +228,8 @@ class CycleGAN(GAN):
         :param same_image:
         :return:
         """
-        with self.strategy.scope():
-            loss = tf.reduce_mean(tf.abs(real_image - same_image))
-            return self.config['lambda'] * 0.5 * loss
+        loss = tf.reduce_mean(tf.abs(real_image - same_image))
+        return self.config['lambda'] * 0.5 * loss
 
     def generate_images(self, model, test_input, image_nr, output_path, img_file_prefix='epoch'):
         """
