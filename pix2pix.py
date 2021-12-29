@@ -40,7 +40,7 @@ class Pix2Pix(GAN):
             input_image - input (thermal) image, tensorflow.python.framework.ops.EagerTensor
             real_image - target (real) image, tensorflow.python.framework.ops.EagerTensor
         """
-        image = super().load(image_file)
+        image = super().load(image_file, resize=False)
 
         # Split each image tensor into two tensors:
         w = tf.shape(image)[1]
@@ -55,13 +55,13 @@ class Pix2Pix(GAN):
 
         return input_image, real_image
 
-    def random_crop(self, input_image, real_image, height, width):
+    def random_crop(self, input_image: tf.Tensor, real_image: tf.Tensor, height: int, width: int):
         """
-        :param input_image:
-        :param real_image:
-        :param height:
-        :param width:
-        :return:
+        :param input_image: tf.Tensor, thermal image
+        :param real_image: tf.Tensor, visible grayscale image
+        :param height: int, image height
+        :param width: int, image width
+        :return: stacked tf.Tensor
         """
         stacked_image = tf.stack([input_image, real_image], axis=0)
         cropped_image = tf.image.random_crop(
@@ -69,11 +69,11 @@ class Pix2Pix(GAN):
         return cropped_image[0], cropped_image[1]
 
     @tf.function()
-    def random_jitter(self, input_image, real_image):
+    def random_jitter(self, input_image: tf.Tensor, real_image: tf.Tensor):
         """
-        :param input_image:
-        :param real_image:
-        :return:
+        :param input_image: tf.Tensor, thermal image
+        :param real_image: tf.Tensor, visible grayscale image
+        :return: tf.Tensor (2)
         """
         # Resizing to height+30px by width+30px
         input_image = super().resize(input_image, self.config['img_size']+30, self.config['img_size']+30)
@@ -86,14 +86,13 @@ class Pix2Pix(GAN):
             # Random mirroring
             input_image = tf.image.flip_left_right(input_image)
             real_image = tf.image.flip_left_right(real_image)
-
         return input_image, real_image
 
-    def process_images_train(self, image_file):
+    def process_images_train(self, image_file: str):
         """
-        Loads individual image, applies random jitter, normalizes image. Processing for train images only.
-        :param image_file:
-        :return:
+        Loads matched image pair, applies random jitter, normalizes images.
+        :param image_file: str, full path to thermal image
+        :return: tf.Tensor (2)
         """
         input_image, real_image = self.split_img(image_file)
         input_image, real_image = self.random_jitter(input_image, real_image)
@@ -101,11 +100,11 @@ class Pix2Pix(GAN):
         real_image = super().normalize(real_image)
         return input_image, real_image
 
-    def process_images_pred(self, image_file):
+    def process_images_pred(self, image_file: str):
         """
-        Loads individual image, resizes, normalizes image. Processing for test/pred images only.
-        :param image_file:
-        :return:
+        Loads matched image pair, *no augmentation*, resizes, normalizes image. Processing for test/pred images only.
+        :param image_file: str, full path to visible image
+        :return: tf.Tensor (2)
         """
         input_image, real_image = self.split_img(image_file)
         input_image = super().resize(input_image, self.config['img_size'], self.config['img_size'])
@@ -114,7 +113,7 @@ class Pix2Pix(GAN):
         real_image = super().normalize(real_image)
         return input_image, real_image
 
-    def image_pipeline(self, predict=False):
+    def image_pipeline(self, predict: bool = False):
         """
         :param predict: bool, whether or not to create train/test split. False treats all images as valid for prediction.
         :return:
@@ -126,17 +125,17 @@ class Pix2Pix(GAN):
 
         # list of images in dir
         contents = [i for i in os.listdir(self.config['data']) if 'png' in i or 'jpg' in i]
+        assert contents, "No images found in data directory!"
 
         if predict:  # all images in `train` used for prediction; they're not training images, only kept for consistency
-            assert(contents), "No JPEG or PNG images found in data directory!"
             train = tf.data.Dataset.from_tensor_slices([self.config['data'] + '/' + i for i in contents])
             train = train.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
-            train = train.shuffle(self.config['buffer_size'])
+            # Note - no shuffling necessary
             train = train.batch(self.config["batch_size"])
             test = None
 
         else:  # if train mode, break into train/test
-            assert(len(contents) >=2), f"Insufficient number of training examples in data directory! " \
+            assert len(contents) >= 2, f"Insufficient number of training examples in data directory! " \
                                           f"At least 2 are required, but found {len(contents)}!"
 
             # Randomly select 1 image to view training progress
@@ -148,18 +147,13 @@ class Pix2Pix(GAN):
 
             # process test images
             test = test.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
-            test = test.shuffle(self.config['buffer_size'])
-            test = test.batch(self.config["batch_size"]).repeat()
+            # Note - no shuffling necessary since just one test image
+            test = test.batch(self.config["batch_size"]).prefetch(buffer_size=tf.data.AUTOTUNE)
 
             # process training images
             train = train.map(self.process_images_train, num_parallel_calls=tf.data.AUTOTUNE)
-            train = train.shuffle(self.config['buffer_size'])
-            train = train.batch(self.config["batch_size"]).repeat()
-
-            # Ensure number of channels in image equals user input channel number
-            assert (train.element_spec[0].shape[-1] == int(self.config[
-                                                    'channels'])), f"Mismatching number of channels between image and user argument! Number of channels in input image is {train.element_spec[0].shape[-1]}, while user specified {self.config['channels']} channels!"
-            # Note - test, has None for channel dim at this point
+            train = train.shuffle(self.config['buffer_size'], reshuffle_each_iteration=True)
+            train = train.batch(self.config["batch_size"]).prefetch(buffer_size=tf.data.AUTOTUNE)
 
         return train, test
 
@@ -304,6 +298,7 @@ class Pix2Pix(GAN):
             else:
                 plt.imshow(display_list[i] * 0.5 + 0.5)
             plt.axis('off')
+            plt.tight_layout()
 
         plot_path = os.path.join(output_path, 'test_images')
         os.makedirs(plot_path, exist_ok=True) # dir should not exist
@@ -325,10 +320,6 @@ class Pix2Pix(GAN):
         print("\nTraining...\n", flush=True)
 
         example_input, example_target = next(iter(test_ds.take(1)))
-
-        # Ensure number of channels align
-        assert (example_input.shape[-1] == int(self.config[
-                                                          'channels'])), f"Mismatching number of channels between image and user argument! Number of channels in input image is {example_input.shape[-1]}, while user specified {self.config['channels']} channels!"
 
         start = time.time()
 
@@ -371,13 +362,10 @@ class Pix2Pix(GAN):
         img_nr = 0
         for input, target in pred_ds:
 
-            # Ensure number of channels align
-            assert (input.shape[-1] == int(self.config['channels'])), f"Mismatching number of channels between image and user argument! Number of channels in input image is {input.shape[-1]}, while user specified {self.config['channels']} channels!"
-
             prediction = self.generator(input, training=True)  # set to training=True as otherwise training not cumulative
 
             # Three image subplots
-            plt.figure(figsize=(15, 6))
+            plt.figure(figsize=(12, 6))
             display_list = [input[0], target[0], prediction[0]]
             title = ['Input Image', 'Ground Truth', 'Predicted Image']
 
@@ -390,6 +378,7 @@ class Pix2Pix(GAN):
                 else:
                     plt.imshow(display_list[i] * 0.5 + 0.5)
                 plt.axis('off')
+                plt.tight_layout()
 
             plot_path = os.path.join(output_path, 'prediction_images')
             os.makedirs(plot_path, exist_ok=True)  # dir should not exist
@@ -403,6 +392,7 @@ class Pix2Pix(GAN):
             else:
                 plt.imshow(prediction[0] * 0.5 + 0.5, cmap=plt.get_cmap('gray'))
             plt.axis('off')
+            plt.tight_layout()
             plt.savefig(os.path.join(plot_path, f'prediction_{img_nr}.png'), dpi=200)
             plt.close()
             img_nr += 1
@@ -414,7 +404,7 @@ def parse_opt():
     parser.add_argument('--output', type=str, help='path to output results', required=True)
     parser.add_argument('--img-size', type=int, default=256, help='image size h,w')
     parser.add_argument('--batch-size', type=int, default=1, help='batch size per replica')
-    parser.add_argument('--buffer-size', type=int, default=400, help='buffer size')
+    parser.add_argument('--buffer-size', type=int, default=99999, help='buffer size')
     parser.add_argument('--channels', type=str, default='1', choices=['1', '3'], help='number of color channels to read in and output')
     parser.add_argument('--no-log', action='store_true', help='turn off script logging, e.g. for CLI debugging')
     parser.add_argument('--generator-loss', type=str, default='l1', choices=['l1', 'ssim'], help='combined generator loss function')
@@ -435,7 +425,12 @@ def parse_opt():
     # Predict param
     parser.add_argument('--weights', type=str, help='path to pretrained model weights for prediction',
                         required='--predict' in sys.argv)
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    # Verify image size
+    assert (args.img_size == 256) or (args.img_size == 512), "img-size currently only supported for 256 x 256 or 512 x 512 pixels!"
+
+    return args
 
 def make_fig(df, title, output_path):
     '''
@@ -452,6 +447,7 @@ def make_fig(df, title, output_path):
     plt.ylabel('Loss')
     plt.legend()
     plt.title(f'Pix2Pix {title}')
+    plt.tight_layout()
     os.makedirs(output_path, exist_ok=True)  # Creates output directory if not existing
     plt.savefig(os.path.join(output_path, f'{title}.png'), dpi=200)
     plt.close()
@@ -470,7 +466,7 @@ def main(opt):
 
     # Log results
     log_dir = os.path.join(full_path, 'logs')
-    os.makedirs(log_dir, exist_ok=True)
+    os.makedirs(log_dir, exist_ok=False)
     if not opt.no_log:
         sys.stdout = open(os.path.join(log_dir, "Log.txt"), "w")
         sys.stderr = sys.stdout
