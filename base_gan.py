@@ -35,9 +35,9 @@ class GAN(ABC):
         # Read and decode an image file to a uint8 tensor
         image = tf.io.read_file(image_file)
         try:
-            image = tf.image.decode_png(image)
+            image = tf.image.decode_png(image, channels=int(self.config['channels']))
         except:
-            image = tf.image.decode_jpeg(image)
+            image = tf.image.decode_jpeg(image, channels=int(self.config['channels']))
 
         # Cast to float32 tensors
         image = tf.cast(image, tf.float32)
@@ -45,20 +45,6 @@ class GAN(ABC):
         if resize:
             image = self.resize(image, self.config['img_size'], self.config['img_size'])
         return image
-
-    def show_img(self):
-        """
-        View random input image
-        :return:
-        """
-        img_list = [i for i in os.listdir(self.config['data']) if '.png' in i or '.jpeg' in i]
-        random_img = ''.join(random.sample(img_list, 1))
-        input, real = self.load(self.config['data'] + f'/{random_img}')
-        # Casting to int for matplotlib to display the images
-        plt.figure()
-        plt.imshow(input / 255.0)
-        plt.figure()
-        plt.imshow(real / 255.0)
 
     def resize(self, image, height, width):
         """
