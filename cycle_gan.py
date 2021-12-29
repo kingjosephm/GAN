@@ -25,8 +25,8 @@ class CycleGAN(GAN):
 
     def __init__(self, config):
         super().__init__(config)
-        self.generator_g = self.Generator(int(self.config['channels']), norm_type='instancenorm')
-        self.generator_f = self.Generator(int(self.config['channels']), norm_type='instancenorm')
+        self.generator_g = super().Generator(norm_type='instancenorm', shape=(None, None, int(self.config['channels'])))
+        self.generator_f = super().Generator(norm_type='instancenorm', shape=(None, None, int(self.config['channels'])))
         self.discriminator_x = super().Discriminator(norm_type='instancenorm', target=False)
         self.discriminator_y = super().Discriminator(norm_type='instancenorm', target=False)
         self.generator_g_optimizer = super().optimizer(learning_rate=self.config['learning_rate'], beta_1=self.config['beta_1'], beta_2=self.config['beta_2'])
@@ -147,64 +147,6 @@ class CycleGAN(GAN):
             # Note - test_X, test_Y have None for channel dim at this point
 
         return train_X, train_Y, test_X
-
-    def Generator(self, output_channels, norm_type='batchnorm'):
-        """
-        Modified u-net generator model (https://arxiv.org/abs/1611.07004).
-        Args:
-          output_channels: int, Output channels
-          norm_type: Type of normalization. Either 'batchnorm' or 'instancenorm'.
-        Returns:
-          Generator model
-        """
-        down_stack = [
-            super().downsample(64, 4, norm_type, apply_norm=False),  # (bs, 128, 128, 64)
-            super().downsample(128, 4, norm_type),  # (bs, 64, 64, 128)
-            super().downsample(256, 4, norm_type),  # (bs, 32, 32, 256)
-            super().downsample(512, 4, norm_type),  # (bs, 16, 16, 512)
-            super().downsample(512, 4, norm_type),  # (bs, 8, 8, 512)
-            super().downsample(512, 4, norm_type),  # (bs, 4, 4, 512)
-            super().downsample(512, 4, norm_type),  # (bs, 2, 2, 512)
-            super().downsample(512, 4, norm_type),  # (bs, 1, 1, 512)
-        ]
-
-        up_stack = [
-            super().upsample(512, 4, norm_type, apply_dropout=True),  # (bs, 2, 2, 1024)
-            super().upsample(512, 4, norm_type, apply_dropout=True),  # (bs, 4, 4, 1024)
-            super().upsample(512, 4, norm_type, apply_dropout=True),  # (bs, 8, 8, 1024)
-            super().upsample(512, 4, norm_type),  # (bs, 16, 16, 1024)
-            super().upsample(256, 4, norm_type),  # (bs, 32, 32, 512)
-            super().upsample(128, 4, norm_type),  # (bs, 64, 64, 256)
-            super().upsample(64, 4, norm_type),  # (bs, 128, 128, 128)
-        ]
-
-        initializer = tf.random_normal_initializer(0., 0.02)
-        last = tf.keras.layers.Conv2DTranspose(
-            output_channels, 4, strides=2,
-            padding='same', kernel_initializer=initializer,
-            activation='tanh')  # (bs, height, width, n_channels)
-
-        concat = tf.keras.layers.Concatenate()
-
-        inputs = tf.keras.layers.Input(shape=[None, None, int(self.config['channels'])])
-        x = inputs
-
-        # Downsampling through the model
-        skips = []
-        for down in down_stack:
-            x = down(x)
-            skips.append(x)
-
-        skips = reversed(skips[:-1])
-
-        # Upsampling and establishing the skip connections
-        for up, skip in zip(up_stack, skips):
-            x = up(x)
-            x = concat([x, skip])
-
-        x = last(x)
-
-        return tf.keras.Model(inputs=inputs, outputs=x)
 
     def generator_loss(self, generated):
         """

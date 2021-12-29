@@ -24,7 +24,7 @@ from base_gan import GAN
 class Pix2Pix(GAN):
     def __init__(self, config):
         super().__init__(config)
-        self.generator = self.Generator()
+        self.generator = super().Generator(shape=(self.config['img_size'], self.config['img_size'], int(self.config['channels'])))
         self.discriminator = super().Discriminator(target=True)
         self.generator_optimizer = super().optimizer(learning_rate=self.config['learning_rate'], beta_1=self.config['beta_1'], beta_2=self.config['beta_2'])
         self.discriminator_optimizer = super().optimizer(learning_rate=self.config['learning_rate'], beta_1=self.config['beta_1'], beta_2=self.config['beta_2'])
@@ -157,63 +157,6 @@ class Pix2Pix(GAN):
 
         return train, test
 
-    def Generator(self):
-        """
-        Modified U-Net encoder.
-        :return: tf.keras Model class
-        """
-
-        inputs = tf.keras.layers.Input(shape=[self.config['img_size'], self.config['img_size'], int(self.config['channels'])])
-
-        down_stack = [
-            super().downsample(64, 4, apply_norm=False),  # (batch_size, 128, 128, 64)
-            super().downsample(128, 4),  # (batch_size, 64, 64, 128)
-            super().downsample(256, 4),  # (batch_size, 32, 32, 256)
-            super().downsample(512, 4),  # (batch_size, 16, 16, 512)
-            super().downsample(512, 4),  # (batch_size, 8, 8, 512)
-            super().downsample(512, 4),  # (batch_size, 4, 4, 512)
-            super().downsample(512, 4),  # (batch_size, 2, 2, 512)
-            super().downsample(512, 4),  # (batch_size, 1, 1, 512)
-        ]
-
-        up_stack = [
-            super().upsample(512, 4, apply_dropout=True),  # (batch_size, 2, 2, 1024)
-            super().upsample(512, 4, apply_dropout=True),  # (batch_size, 4, 4, 1024)
-            super().upsample(512, 4, apply_dropout=True),  # (batch_size, 8, 8, 1024)
-            super().upsample(512, 4),  # (batch_size, 16, 16, 1024)
-            super().upsample(256, 4),  # (batch_size, 32, 32, 512)
-            super().upsample(128, 4),  # (batch_size, 64, 64, 256)
-            super().upsample(64, 4),  # (batch_size, 128, 128, 128)
-        ]
-
-        initializer = tf.random_normal_initializer(0., 0.02)
-        last = tf.keras.layers.Conv2DTranspose(int(self.config['channels']), 4,
-                                               strides=2,
-                                               padding='same',
-                                               kernel_initializer=initializer,
-                                               activation='tanh')  # (batch_size, height, width, channels)
-
-        x = inputs
-
-        # Downsampling through the model
-        skips = []
-        for down in down_stack:
-            x = down(x)
-            skips.append(x)
-
-        skips = reversed(skips[:-1])
-
-        # Upsampling and establishing the skip connections
-        for up, skip in zip(up_stack, skips):
-            x = up(x)
-            x = tf.keras.layers.Concatenate()([x, skip])
-
-        x = last(x)
-
-        model = tf.keras.Model(inputs=inputs, outputs=x)
-
-        return model
-
     def generator_loss(self, disc_generated_output, gen_output, target, input_image):
         """
         Generator loss
@@ -302,7 +245,6 @@ class Pix2Pix(GAN):
         :param train_ds:
         :param test_ds:
         :param steps:
-        :param summary_writer: tf.summary_writer object
         :param output_path: str, path to output test images across training steps
         :param checkpoint_manager:
         :param save_weights: bool, whether to save model weights per 5k training steps and at end, along with model checkpoints

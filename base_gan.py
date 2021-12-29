@@ -165,6 +165,65 @@ class GAN(ABC):
         else:
             return tf.keras.Model(inputs=inp, outputs=last)
 
+    def Generator(self, norm_type='batchnorm', shape: tuple = (None, None, None)):
+        """
+        Modified u-net generator model (https://arxiv.org/abs/1611.07004).
+        Args:
+          norm_type: Type of normalization. Either 'batchnorm' or 'instancenorm'.
+        Returns:
+          Generator model
+        """
+
+        inputs = tf.keras.layers.Input(shape=[shape[0], shape[1], shape[2]])
+
+        down_stack = [
+            self.downsample(64, 4, norm_type, apply_norm=False),  # (bs, 128, 128, 64)
+            self.downsample(128, 4, norm_type),  # (bs, 64, 64, 128)
+            self.downsample(256, 4, norm_type),  # (bs, 32, 32, 256)
+            self.downsample(512, 4, norm_type),  # (bs, 16, 16, 512)
+            self.downsample(512, 4, norm_type),  # (bs, 8, 8, 512)
+            self.downsample(512, 4, norm_type),  # (bs, 4, 4, 512)
+            self.downsample(512, 4, norm_type),  # (bs, 2, 2, 512)
+            self.downsample(512, 4, norm_type),  # (bs, 1, 1, 512)
+        ]
+
+        up_stack = [
+            self.upsample(512, 4, norm_type, apply_dropout=True),  # (bs, 2, 2, 1024)
+            self.upsample(512, 4, norm_type, apply_dropout=True),  # (bs, 4, 4, 1024)
+            self.upsample(512, 4, norm_type, apply_dropout=True),  # (bs, 8, 8, 1024)
+            self.upsample(512, 4, norm_type),  # (bs, 16, 16, 1024)
+            self.upsample(256, 4, norm_type),  # (bs, 32, 32, 512)
+            self.upsample(128, 4, norm_type),  # (bs, 64, 64, 256)
+            self.upsample(64, 4, norm_type),  # (bs, 128, 128, 128)
+        ]
+
+        initializer = tf.random_normal_initializer(0., 0.02)
+        last = tf.keras.layers.Conv2DTranspose(
+            shape[2], 4, strides=2,
+            padding='same', kernel_initializer=initializer,
+            activation='tanh')  # (bs, height, width, n_channels)
+
+        concat = tf.keras.layers.Concatenate()
+
+        x = inputs
+
+        # Downsampling through the model
+        skips = []
+        for down in down_stack:
+            x = down(x)
+            skips.append(x)
+
+        skips = reversed(skips[:-1])
+
+        # Upsampling and establishing the skip connections
+        for up, skip in zip(up_stack, skips):
+            x = up(x)
+            x = concat([x, skip])
+
+        x = last(x)
+
+        return tf.keras.Model(inputs=inputs, outputs=x)
+
     def loss_object(self):
         """
         :return:
@@ -214,10 +273,6 @@ class GAN(ABC):
 
     @abstractmethod
     def generator_loss(self, *args, **kwargs):
-        return
-
-    @abstractmethod
-    def Generator(self, *args, **kwargs):
         return
 
     @abstractmethod
