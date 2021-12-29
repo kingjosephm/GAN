@@ -42,19 +42,19 @@ class CycleGAN(GAN):
                               'Discriminator Y Loss': []}
 
 
-    def random_crop(self, image, height, width):
+    def random_crop(self, image: tf.Tensor, height: int, width: int):
         """
-        :param image:
-        :param height:
-        :param width:
-        :return:
+        :param image: tf.Tensor, training image
+        :param height: int, height
+        :param width: int, width
+        :return: tf.Tensor
         """
         return tf.image.random_crop(image, size=[height, width, int(self.config['channels'])])
 
-    def random_jitter(self, image):
+    def random_jitter(self, image: tf.Tensor):
         """
-        :param image:
-        :return:
+        :param image: tf.Tensor, training image
+        :return: tf.Tensor
         """
         # Resizing to height+30px by width+30px
         image = super().resize(image, self.config['img_size']+30, self.config['img_size']+30)
@@ -67,29 +67,29 @@ class CycleGAN(GAN):
 
         return image
 
-    def process_images_train(self, image_file):
+    def process_images_train(self, image_file: str):
         """
         Loads individual image, applies random jitter, normalizes image. Processing for train images only.
-        :param image_file:
-        :return:
+        :param image_file: str, full path to image
+        :return: tf.Tensor
         """
         image = super().load(image_file, resize=True)
         image = self.random_jitter(image)
         image = super().normalize(image)
         return image
 
-    def process_images_pred(self, image_file):
+    def process_images_pred(self, image_file: str):
         """
         Loads individual image, resizes, normalizes image. Processing for test/pred images only.
-        :param image_file:
-        :return:
+        :param image_file: str, full path to image
+        :return: tf.Tensor
         """
         image = super().load(image_file, resize=True)
         image = super().resize(image, self.config['img_size'], self.config['img_size'])
         image = super().normalize(image)
         return image
 
-    def image_pipeline(self, predict=False):
+    def image_pipeline(self, predict: bool = False):
         """
         :param predict: bool, whether or not to create train/test split. False treats all images as valid for prediction.
         :return:
@@ -104,18 +104,18 @@ class CycleGAN(GAN):
         contents_Y = [i for i in os.listdir(self.config['target_images']) if 'png' in i or 'jpg' in i]
 
         if predict:  # all images in `train` used for prediction; they're not training images, only kept for consistency
-            assert(contents_X), "No JPEG or PNG images found in input image directory!"
-            train_X = tf.data.Dataset.from_tensor_slices([self.config['input_images'] + '/' + i for i in contents_X]) # resize all to same dims in case images different sizes
+            assert contents_X, "No images found in input image directory!"
+            train_X = tf.data.Dataset.from_tensor_slices([self.config['input_images'] + '/' + i for i in contents_X])
             train_X = train_X.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
-            train_X = train_X.shuffle(self.config['buffer_size'])
+            # Note - no shuffling necessary
             train_X = train_X.batch(self.config["batch_size"])
             train_Y = None
             test_X = None
 
         else:  # if train mode, break into train/test
-            assert(len(contents_X) >= 2), f"Insufficient number of training examples in input image directory! " \
+            assert len(contents_X) >= 2, f"Insufficient number of training examples in input image directory! " \
                                           f"At least 2 are required, but found {len(contents_X)}!"
-            assert(len(contents_Y) >= 2), f"Insufficient number of training examples in target image directory! " \
+            assert len(contents_Y) >= 2, f"Insufficient number of training examples in target image directory! " \
                                           f"At least 2 are required, but found {len(contents_Y)}!"
 
             # Randomly select 1 image to view training progress
@@ -129,22 +129,16 @@ class CycleGAN(GAN):
             train_Y = tf.data.Dataset.from_tensor_slices([self.config['target_images'] + '/' + i for i in train_Y])
 
             # process test images
-            test_X = test_X.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE).cache()
-            test_X = test_X.shuffle(self.config['buffer_size'])
+            test_X = test_X.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
             test_X = test_X.batch(self.config["batch_size"])
 
             # process training images
-            train_X = train_X.map(self.process_images_train, num_parallel_calls=tf.data.AUTOTUNE).cache()
-            train_Y = train_Y.map(self.process_images_train, num_parallel_calls=tf.data.AUTOTUNE).cache()
-            train_X = train_X.shuffle(self.config['buffer_size'])
-            train_Y = train_Y.shuffle(self.config['buffer_size'])
-            train_X = train_X.batch(self.config["batch_size"])
-            train_Y = train_Y.batch(self.config["batch_size"])
-
-            # Ensure channels align
-            assert (train_X.element_spec.shape[-1] == int(self.config['channels'])), f"Mismatching number of channels between image and user argument! Number of channels in input image is {train_X.element_spec.shape[-1]}, while user specified {self.config['channels']} channels!"
-            assert (train_Y.element_spec.shape[-1] == int(self.config['channels'])), f"Mismatching number of channels between image and user argument! Number of channels in target image is {train_Y.element_spec.shape[-1]}, while user specified {self.config['channels']} channels!"
-            # Note - test_X, test_Y have None for channel dim at this point
+            train_X = train_X.map(self.process_images_train, num_parallel_calls=tf.data.AUTOTUNE)
+            train_Y = train_Y.map(self.process_images_train, num_parallel_calls=tf.data.AUTOTUNE)
+            train_X = train_X.shuffle(self.config['buffer_size'], reshuffle_each_iteration=True)
+            train_Y = train_Y.shuffle(self.config['buffer_size'], reshuffle_each_iteration=True)
+            train_X = train_X.batch(self.config["batch_size"]).prefetch(buffer_size=tf.data.AUTOTUNE)
+            train_Y = train_Y.batch(self.config["batch_size"]).prefetch(buffer_size=tf.data.AUTOTUNE)
 
         return train_X, train_Y, test_X
 
@@ -173,12 +167,12 @@ class CycleGAN(GAN):
         loss = tf.reduce_mean(tf.abs(real_image - same_image))
         return self.config['lambda'] * 0.5 * loss
 
-    def generate_images(self, model, test_input, image_nr, output_path, img_file_prefix='epoch'):
+    def generate_images(self, model: tf.keras.Model, test_input: tf.Tensor, image_nr: int, output_path: str, img_file_prefix: str = 'epoch'):
         """
-        :param model:
-        :param test_input:
+        :param model: tf.keras.Model
+        :param test_input: tf.Tensor
         :param image_nr: int, either epoch number (train only) of image identifier number (predict mode)
-        :param output_path:
+        :param output_path: str, output path
         :param img_file_prefix: str, output image file suffix, whether 'epoch' (train) or 'img' (predict)
         :return:
         """
@@ -197,22 +191,22 @@ class CycleGAN(GAN):
             else:
                 plt.imshow(display_list[i] * 0.5 + 0.5)
             plt.axis('off')
+            plt.tight_layout()
 
-        if img_file_prefix == 'epoch': # train mode, make subdir
+        if img_file_prefix == 'epoch':  # train mode, make subdir
             plot_path = os.path.join(output_path, 'test_images')
-        else: # predict mode, don't make subdir
+            os.makedirs(plot_path, exist_ok=True)
+        else:  # predict mode, don't make subdir
             plot_path = output_path
-        os.makedirs(plot_path, exist_ok=True) # dir should not exist
         plt.savefig(os.path.join(plot_path, f"{img_file_prefix}_{image_nr}.png"), dpi=200)
         plt.close()
 
     @tf.function
-    def train_step(self, real_x, real_y, epoch, summary_writer):
+    def train_step(self, real_x, real_y, epoch):
         """
         :param real_x:
         :param real_y:
         :param epoch:
-        :param summary_writer:
         :return:
         """
         # persistent is set to True because the tape is used more than
@@ -274,45 +268,33 @@ class CycleGAN(GAN):
         self.discriminator_y_optimizer.apply_gradients(zip(discriminator_y_gradients,
                                                       self.discriminator_y.trainable_variables))
 
-        with summary_writer.as_default():
-            tf.summary.scalar('X->Y Generator Loss', tf.reduce_sum(gen_g_loss), step=epoch)
-            tf.summary.scalar('Y->X Generator Loss', tf.reduce_sum(gen_f_loss), step=epoch)
-            tf.summary.scalar('Total Cycle Loss', tf.reduce_sum(total_cycle_loss), step=epoch)
-            tf.summary.scalar('Total X->Y Generator Loss', tf.reduce_sum(total_gen_g_loss), step=epoch)
-            tf.summary.scalar('Total Y->X Generator Loss', tf.reduce_sum(total_gen_f_loss), step=epoch)
-            tf.summary.scalar('Discriminator X Loss', disc_x_loss, step=epoch)
-            tf.summary.scalar('Discriminator Y Loss', disc_y_loss, step=epoch)
-
         return gen_g_loss, gen_f_loss, total_cycle_loss, total_gen_g_loss, total_gen_f_loss, \
                disc_x_loss, disc_y_loss
 
-    def fit(self, train_X, train_Y, test_X, epochs, summary_writer, output_path, checkpoint_manager=None, save_weights=True):
+    def fit(self, train_X, train_Y, test_X, epochs: int, output_path: str, checkpoint_manager=None, save_weights: bool = True):
 
         print("\nTraining...\n", flush=True)
 
         example_X = next(iter(test_X.take(1)))
 
-        assert (example_X.shape[-1] == int(self.config['channels'])), f"Mismatching number of channels between image and user argument! Number of channels in input image is {example_X.shape[-1]}, while user specified {self.config['channels']} channels!"
-
         start = time.time()
 
         for epoch in range(epochs):
 
-            n = 0
             for image_x, image_y in tf.data.Dataset.zip((train_X, train_Y)):
 
                 gen_g_loss, gen_f_loss, total_cycle_loss, total_gen_g_loss, total_gen_f_loss, \
-                disc_x_loss, disc_y_loss = self.train_step(image_x, image_y, epoch, summary_writer)
+                disc_x_loss, disc_y_loss = self.train_step(image_x, image_y, epoch)
 
                 # Performance metrics from step into dict
                 # Note - must be done outside self.train_step() as numpy operations do not work in tf.function
-                self.model_metrics['X->Y Generator Loss'].append(tf.reduce_sum(gen_g_loss, axis=None).numpy().tolist())
-                self.model_metrics['Y->X Generator Loss'].append(tf.reduce_sum(gen_f_loss, axis=None).numpy().tolist())
-                self.model_metrics['Total Cycle Loss'].append(tf.reduce_sum(total_cycle_loss, axis=None).numpy().tolist())
-                self.model_metrics['Total X->Y Generator Loss'].append(tf.reduce_sum(total_gen_g_loss, axis=None).numpy().tolist())
-                self.model_metrics['Total Y->X Generator Loss'].append(tf.reduce_sum(total_gen_f_loss, axis=None).numpy().tolist())
-                self.model_metrics['Discriminator X Loss'].append(tf.reduce_sum(disc_x_loss, axis=None).numpy().tolist())
-                self.model_metrics['Discriminator Y Loss'].append(tf.reduce_sum(disc_y_loss, axis=None).numpy().tolist())
+                self.model_metrics['X->Y Generator Loss'].append(gen_g_loss.numpy().tolist())
+                self.model_metrics['Y->X Generator Loss'].append(gen_f_loss.numpy().tolist())
+                self.model_metrics['Total Cycle Loss'].append(total_cycle_loss.numpy().tolist())
+                self.model_metrics['Total X->Y Generator Loss'].append(total_gen_g_loss.numpy().tolist())
+                self.model_metrics['Total Y->X Generator Loss'].append(total_gen_f_loss.numpy().tolist())
+                self.model_metrics['Discriminator X Loss'].append(disc_x_loss.numpy().tolist())
+                self.model_metrics['Discriminator Y Loss'].append(disc_y_loss.numpy().tolist())
 
             # Every 5 epochs save weights and generate predicted image
             if (epoch + 1) % 5 == 0:
@@ -326,9 +308,8 @@ class CycleGAN(GAN):
                 self.generate_images(self.generator_g, example_X, epoch+1, output_path)
 
             print('Cumulative training duration at epoch {} is {} sec\n'.format(epoch + 1, time.time() - start))
-            n += 1
 
-    def predict(self, pred_ds, output_path):
+    def predict(self, pred_ds, output_path: str):
         """
         :param pred_ds: tf.python.data.ops.dataset_ops.BatchDataset
         :param output_path: str, output path for image
@@ -342,8 +323,6 @@ class CycleGAN(GAN):
         img_nr = 0
         for image in pred_ds:
 
-            assert (image.shape[-1] == int(self.config['channels'])), f"Mismatching number of channels between image and user argument! Number of channels in input image is {image.shape[-1]}, while user specified {self.config['channels']} channels!"
-
             # Output combined image
             self.generate_images(self.generator_g, image, img_nr, plot_path, img_file_prefix='img')
 
@@ -355,6 +334,7 @@ class CycleGAN(GAN):
             else:
                 plt.imshow(prediction[0] * 0.5 + 0.5)
             plt.axis('off')
+            plt.tight_layout()
             plt.savefig(os.path.join(plot_path, f'prediction_{img_nr}.png'), dpi=200)
             plt.close()
             img_nr += 1
@@ -365,11 +345,10 @@ def parse_opt():
     parser.add_argument('--input-images', type=str, help='path to input images', required=True)
     parser.add_argument('--output', type=str, help='path to output results', required=True)
     parser.add_argument('--img-size', type=int, default=256, help='image size h,w')
-    parser.add_argument('--batch-size', type=int, default=1, help='batch size per replica')
-    parser.add_argument('--buffer-size', type=int, default=1000, help='buffer size')
+    parser.add_argument('--batch-size', type=int, default=1, help='batch size')
+    parser.add_argument('--buffer-size', type=int, default=99999, help='buffer size')
     parser.add_argument('--channels', type=str, default='1', choices=['1', '3'], help='number of color channels to read in and output')
     parser.add_argument('--no-log', action='store_true', help='turn off script logging, e.g. for CLI debugging')
-    parser.add_argument('--generator-loss', type=str, default='l1', choices=['l1', 'ssim'], help='combined generator loss function')
     # Mode
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--train', action='store_true', help='train model using data')
@@ -404,6 +383,7 @@ def make_fig(df, title, output_path):
     plt.ylabel('Loss')
     plt.legend()
     plt.title(f'CycleGAN {title}')
+    plt.tight_layout()
     os.makedirs(output_path, exist_ok=True)  # Creates output directory if not existing
     plt.savefig(os.path.join(output_path, f'{title}.png'), dpi=200)
     plt.close()
@@ -457,14 +437,10 @@ def main(opt):
         else:
             manager = None
 
-        # Summary witer file for tensorboard
-        summary_writer = tf.summary.create_file_writer(log_dir)
-
         cgan.fit(train_X=train_X,
                  train_Y=train_Y,
                  test_X=test_X,
                  epochs=cgan.config['epochs'],
-                 summary_writer=summary_writer,
                  output_path=full_path,
                  checkpoint_manager=manager,
                  save_weights=cgan.config['save_weights'])
