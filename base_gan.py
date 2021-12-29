@@ -1,9 +1,6 @@
-import os
-import random
 import tensorflow as tf
 from abc import ABC, abstractmethod
 from utils import InstanceNormalization
-import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg') # suppresses plot
 
@@ -26,11 +23,11 @@ class GAN(ABC):
         self.config = config
         self.loss_obj = self.loss_object()
 
-    def load(self, image_file, resize=False):
+    def load(self, image_file: str, resize: bool = False):
         """
-        :param image_file:
+        :param image_file: str, full path to image file
         :param resize: bool, whether to resize image on read in to ensure consistently-sized images in tensor
-        :return:
+        :return: tf.Tensor
         """
         # Read and decode an image file to a uint8 tensor
         image = tf.io.read_file(image_file)
@@ -46,7 +43,7 @@ class GAN(ABC):
             image = self.resize(image, self.config['img_size'], self.config['img_size'])
         return image
 
-    def resize(self, image, height, width):
+    def resize(self, image: tf.Tensor, height: int, width: int):
         """
         :param image:
         :param height:
@@ -56,14 +53,14 @@ class GAN(ABC):
         return tf.image.resize(image, [height, width], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
 
     # Normalizing the images to [-1, 1]
-    def normalize(self, image):
+    def normalize(self, image: tf.Tensor):
         """
         :param image:
         :return:
         """
         return (image / 127.5) - 1
 
-    def downsample(self, filters, size, norm_type='batchnorm', apply_norm=True):
+    def downsample(self, filters: int, size: int, norm_type: str = 'batchnorm', apply_norm: bool = True):
         """Downsamples an input.
         Conv2D => Batchnorm => LeakyRelu
         Args:
@@ -91,7 +88,7 @@ class GAN(ABC):
 
         return result
 
-    def upsample(self, filters, size, norm_type='batchnorm', apply_dropout=False):
+    def upsample(self, filters: int, size: int, norm_type: str = 'batchnorm', apply_dropout: bool = False):
         """Upsamples an input.
         Conv2DTranspose => Batchnorm => Dropout => Relu
         Args:
@@ -124,7 +121,7 @@ class GAN(ABC):
 
         return result
 
-    def Discriminator(self, norm_type='batchnorm', target=True):
+    def Discriminator(self, norm_type: str = 'batchnorm', target: bool = True):
         """PatchGan discriminator model (https://arxiv.org/abs/1611.07004).
         Args:
           norm_type: Type of normalization. Either 'batchnorm' or 'instancenorm'.
@@ -174,7 +171,7 @@ class GAN(ABC):
         """
         return tf.keras.losses.BinaryCrossentropy(from_logits=True)
 
-    def discriminator_loss(self, real, generated, factor=1.0):
+    def discriminator_loss(self, real, generated, factor: float = 1.0):
         """
         Discriminator loss.
         :param real:
@@ -183,12 +180,12 @@ class GAN(ABC):
         :return:
             total_discriminator_loss: float
         """
-        real_loss = tf.reduce_sum(self.loss_obj(tf.ones_like(real), real))
-        generated_loss = tf.reduce_sum(self.loss_obj(tf.zeros_like(generated), generated))
+        real_loss = self.loss_obj(tf.ones_like(real), real)
+        generated_loss = self.loss_obj(tf.zeros_like(generated), generated)
 
         return (real_loss + generated_loss) * factor
 
-    def optimizer(self, learning_rate=2e-4, beta_1=0.5, beta_2=0.999):
+    def optimizer(self, learning_rate: float = 2e-4, beta_1: float = 0.5, beta_2: float = 0.999):
         """
         Optimizer for both generator and discriminators
         :return: tf.keras Adam optimizer

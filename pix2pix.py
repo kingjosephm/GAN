@@ -224,26 +224,25 @@ class Pix2Pix(GAN):
         :return:
         """
 
-        gan_loss = tf.reduce_sum(self.loss_obj(tf.ones_like(disc_generated_output), disc_generated_output))
+        gan_loss = self.loss_obj(tf.ones_like(disc_generated_output), disc_generated_output)
 
         if self.config['generator_loss']=='l1':
             # Mean absolute error
             gan_loss2 = tf.reduce_mean(tf.abs(target - gen_output))
         else:  # ssim
             # SSIM loss, see https://www.tensorflow.org/api_docs/python/tf/image/ssim
-            gan_loss2 = (1 - tf.reduce_sum(tf.image.ssim(input_image, target, max_val=255, filter_size=11, filter_sigma=1.5, k1=0.01, k2=0.03)))
+            gan_loss2 = tf.image.ssim(input_image, target, max_val=255, filter_size=11, filter_sigma=1.5, k1=0.01, k2=0.03)
 
         total_gen_loss = gan_loss + (self.config['lambda'] * gan_loss2)
 
         return total_gen_loss, gan_loss, gan_loss2
 
     @tf.function
-    def train_step(self, input_image, target, step, summary_writer):
+    def train_step(self, input_image, target, step):
         """
         :param input_image:
         :param target:
         :param step:
-        :param summary_writer: tf.summary_writer object
         :return:
         """
 
@@ -264,13 +263,6 @@ class Pix2Pix(GAN):
                                                 self.generator.trainable_variables))
         self.discriminator_optimizer.apply_gradients(zip(discriminator_gradients,
                                                     self.discriminator.trainable_variables))
-
-        # Model metrics to use in tensorboard
-        with summary_writer.as_default():
-            tf.summary.scalar('Generator Total Loss', gen_total_loss, step=step // 1000)
-            tf.summary.scalar('Generator Loss (Primary)', gen_gan_loss, step=step // 1000)
-            tf.summary.scalar('Generator Loss (Secondary)', gen_gan_loss2, step=step // 1000) # L1 loss or SSIM
-            tf.summary.scalar('Discriminator Loss', disc_loss, step=step // 1000)
 
         return gen_total_loss, gen_gan_loss, gen_gan_loss2, disc_loss  # return model metrics as unable to convert to numpy within @tf.function
 
@@ -305,7 +297,7 @@ class Pix2Pix(GAN):
         plt.savefig(os.path.join(plot_path, f'step_{step}.png'), dpi=200)
         plt.close()
 
-    def fit(self, train_ds, test_ds, steps, summary_writer, output_path, checkpoint_manager=None, save_weights=True):
+    def fit(self, train_ds, test_ds, steps, output_path, checkpoint_manager=None, save_weights=True):
         """
         :param train_ds:
         :param test_ds:
@@ -328,14 +320,14 @@ class Pix2Pix(GAN):
 
                 print(f'\nCumulative training time at step {step+1}: {time.time() - start:.2f} sec\n')
 
-            gen_total_loss, gen_gan_loss, gen_gan_loss2, disc_loss = self.train_step(input_image, target, step, summary_writer)
+            gen_total_loss, gen_gan_loss, gen_gan_loss2, disc_loss = self.train_step(input_image, target, step)
 
             # Performance metrics from step into dict
             # Note - must be done outside self.train_step() as numpy operations do not work in tf.function
-            self.model_metrics['Generator Total Loss'].append(tf.reduce_sum(gen_total_loss, axis=None).numpy().tolist() // 1000)
-            self.model_metrics['Generator Loss (Primary)'].append(tf.reduce_sum(gen_gan_loss, axis=None).numpy().tolist() // 1000)
-            self.model_metrics['Generator Loss (Secondary)'].append(tf.reduce_sum(gen_gan_loss2, axis=None).numpy().tolist() // 1000)
-            self.model_metrics['Discriminator Loss'].append(tf.reduce_sum(disc_loss, axis=None).numpy().tolist() // 1000)
+            self.model_metrics['Generator Total Loss'].append(gen_total_loss.numpy().tolist())
+            self.model_metrics['Generator Loss (Primary)'].append(gen_gan_loss.numpy().tolist())
+            self.model_metrics['Generator Loss (Secondary)'].append(gen_gan_loss2.numpy().tolist())
+            self.model_metrics['Discriminator Loss'].append(disc_loss.numpy().tolist())
 
             # Save (checkpoint) the model every 5k steps and at end
             # Also saves generated training image
@@ -498,13 +490,9 @@ def main(opt):
         else:
             manager = None
 
-        # Summary writer file for tensorboard
-        summary_writer = tf.summary.create_file_writer(log_dir)
-
         p2p.fit(train_ds=train_dataset,
                 test_ds=test_dataset,
                 steps=p2p.config['steps'],
-                summary_writer=summary_writer,
                 output_path=full_path,
                 checkpoint_manager=manager,
                 save_weights=p2p.config['save_weights'])
