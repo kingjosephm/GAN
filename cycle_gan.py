@@ -201,7 +201,6 @@ class CycleGAN(GAN):
         plt.savefig(os.path.join(plot_path, f"{img_file_prefix}_{image_nr}.png"), dpi=200)
         plt.close()
 
-    @tf.function
     def train_step(self, real_x, real_y, epoch):
         """
         :param real_x:
@@ -296,6 +295,11 @@ class CycleGAN(GAN):
                 self.model_metrics['Discriminator X Loss'].append(disc_x_loss.numpy().tolist())
                 self.model_metrics['Discriminator Y Loss'].append(disc_y_loss.numpy().tolist())
 
+                if mini_batch_count % 100 == 0:  # counter for every 100 mini-batches
+                    print('.', end='', flush=True)
+
+                mini_batch_count += 1
+
             # Every 5 epochs save weights and generate predicted image
             if (epoch + 1) % 5 == 0:
                 if save_weights:
@@ -307,7 +311,7 @@ class CycleGAN(GAN):
                     checkpoint_manager.save()
                 self.generate_images(self.generator_g, example_X, epoch+1, output_path)
 
-            print('Cumulative training duration at epoch {} is {} sec\n'.format(epoch + 1, time.time() - start))
+            print(f'\nCumulative training duration at end of epoch {epoch + 1}: {time.time() - start:.2f} sec\n')
 
     def predict(self, pred_ds, output_path: str):
         """
@@ -440,7 +444,6 @@ def main(opt):
         cgan.fit(train_X=train_X,
                  train_Y=train_Y,
                  test_X=test_X,
-                 epochs=cgan.config['epochs'],
                  output_path=full_path,
                  checkpoint_manager=manager,
                  save_weights=cgan.config['save_weights'])
@@ -452,10 +455,10 @@ def main(opt):
         # Output performance metrics figures
         for key in cgan.model_metrics.keys():
             df = pd.DataFrame(cgan.model_metrics[key]).reset_index()
-            obs_per_epoch = len(df) / cgan.config['epochs']  # Number of data points per epoch = N_X-1
-            df['epoch'] = ((df['index'] // obs_per_epoch) + 1).astype('int')
-            agg = df.groupby('epoch')[0].mean()  # mean loss by epoch across obs
-            make_fig(agg, title=key, output_path=os.path.join(full_path, 'figs'))
+            batches_per_epoch = len(df) / cgan.config['epochs']  # Number of mini-batches per epoch
+            df['epoch'] = ((df['index'] // batches_per_epoch) + 1).astype('int')
+            agg = df.groupby('epoch')[0].mean()  # mean loss by epoch across batches
+            make_fig(agg, title='CycleGAN ' + key, output_path=os.path.join(full_path, 'figs'))
 
     print("Done.")
 

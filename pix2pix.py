@@ -180,16 +180,13 @@ class Pix2Pix(GAN):
 
         return total_gen_loss, gan_loss, gan_loss2
 
-    @tf.function
-    def train_step(self, input_image, target, step):
+    def train_step(self, input_image, target):
         """
         :param input_image:
         :param target:
-        :param step:
         :return:
         """
 
-        # TODO - consider different numbers of generator or discriminator steps each time
         with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
             gen_output = self.generator(input_image, training=True)
 
@@ -209,12 +206,12 @@ class Pix2Pix(GAN):
 
         return gen_total_loss, gen_gan_loss, gen_gan_loss2, disc_loss  # return model metrics as unable to convert to numpy within @tf.function
 
-    def generate_images(self, model, test_input, tar, step, output_path):
+    def generate_images(self, model: tf.keras.Model, test_input: tf.Tensor, tar: tf.Tensor, epoch: int, output_path: str):
         """
         :param model:
         :param test_input:
         :param tar:
-        :param step:
+        :param epoch:
         :param output_path:
         :return:
         """
@@ -237,15 +234,14 @@ class Pix2Pix(GAN):
 
         plot_path = os.path.join(output_path, 'test_images')
         os.makedirs(plot_path, exist_ok=True) # dir should not exist
-        plt.savefig(os.path.join(plot_path, f'step_{step}.png'), dpi=200)
+        plt.savefig(os.path.join(plot_path, f'epoch_{epoch}.png'), dpi=200)
         plt.close()
 
     def fit(self, train_ds, test_ds, steps, output_path, checkpoint_manager=None, save_weights=True):
         """
         :param train_ds:
         :param test_ds:
-        :param steps:
-        :param output_path: str, path to output test images across training steps
+        :param output_path: str, path to output test images across training epochs
         :param checkpoint_manager:
         :param save_weights: bool, whether to save model weights per 5k training steps and at end, along with model checkpoints
         :return:
@@ -257,35 +253,40 @@ class Pix2Pix(GAN):
 
         start = time.time()
 
-        for step, (input_image, target) in train_ds.repeat().take(steps).enumerate():
-            if (step % 1000 == 0) and (step > 0):
+        for epoch in range(self.config['epochs']):
 
-                print(f'\nCumulative training time at step {step+1}: {time.time() - start:.2f} sec\n')
+            mini_batch_count = 1
+            for step, (input_image, target) in enumerate(train_ds):  # each step is a mini-batch
 
-            gen_total_loss, gen_gan_loss, gen_gan_loss2, disc_loss = self.train_step(input_image, target, step)
+                gen_total_loss, gen_gan_loss, gen_gan_loss2, disc_loss = self.train_step(input_image, target)
 
-            # Performance metrics from step into dict
-            # Note - must be done outside self.train_step() as numpy operations do not work in tf.function
-            self.model_metrics['Generator Total Loss'].append(gen_total_loss.numpy().tolist())
-            self.model_metrics['Generator Loss (Primary)'].append(gen_gan_loss.numpy().tolist())
-            self.model_metrics['Generator Loss (Secondary)'].append(gen_gan_loss2.numpy().tolist())
-            self.model_metrics['Discriminator Loss'].append(disc_loss.numpy().tolist())
+                # Performance metrics from step into dict
+                # Note - must be done outside self.train_step() as numpy operations do not work in tf.function
+                self.model_metrics['Generator Total Loss'].append(gen_total_loss.numpy().tolist())
+                self.model_metrics['Generator Loss (Primary)'].append(gen_gan_loss.numpy().tolist())
+                self.model_metrics['Generator Loss (Secondary)'].append(gen_gan_loss2.numpy().tolist())
+                self.model_metrics['Discriminator Loss'].append(disc_loss.numpy().tolist())
 
-            # Save (checkpoint) the model every 5k steps and at end
-            # Also saves generated training image
-            if (step + 1) % 50000 == 0:
-                if save_weights:
+                if mini_batch_count % 100 == 0:  # counter for every 100 mini-batches
+                    print('.', end='', flush=True)
+
+                mini_batch_count += 1
+
+            # Every 5 epochs save weights and generate predicted image
+            if ((epoch + 1) % 5 == 0) and ((epoch + 1) != self.config['epochs']):
+                if save_weights == 'true':
                     checkpoint_manager.save()
-                self.generate_images(self.generator, example_input, example_target, step+1, output_path)
+                self.generate_images(self.generator, example_input, example_target, epoch+1, output_path)
 
             # At end save checkpoint and final test image
-            if (step + 1) == self.config['steps']:
-                if save_weights:
+            if (epoch + 1) == self.config['epochs']:
+                if save_weights == 'true':
                     checkpoint_manager.save()
-                self.generate_images(self.generator, example_input, example_target, step+1, output_path)
-                print(f'Cumulative training time at end of {step} steps: {time.time() - start:.2f} sec\n')
+                self.generate_images(self.generator, example_input, example_target, epoch+1, output_path)
 
-    def predict(self, pred_ds, output_path):
+            print(f'\nCumulative training duration at end of epoch {epoch + 1}: {time.time() - start:.2f} sec\n')
+
+    def predict(self, pred_ds: tf.Tensor, output_path: str):
         """
         :param pred_ds:
         :param output_path:
@@ -348,10 +349,8 @@ def parse_opt():
     group.add_argument('--train', action='store_true', help='train model using data')
     group.add_argument('--predict', action='store_true', help='use pretrained weights to make predictions on data')
     # Train params
-    group2 = parser.add_mutually_exclusive_group(required='--train' in sys.argv)
-    group2.add_argument('--save-weights', action='store_true', help='save model checkpoints and weights')
-    group2.add_argument('--no-save-weights', action='store_true', help='do not save model checkpoints or weights')
-    parser.add_argument('--steps', type=int, default=10, help='number of training steps to take')
+    parser.add_argument('--save-weights', type=str, default='true', choices=['true', 'false'], help='save model checkpoints and weights')
+    parser.add_argument('--epochs', type=int, default=5, help='number of epochs to train', required='--train' in sys.argv)
     parser.add_argument('--lambda', type=int, default=100, help='lambda value for secondary generator loss (L1)')
     parser.add_argument('--learning-rate', type=float, default=0.0002, help='learning rate for Adam optimizer for generator and discriminator')
     parser.add_argument('--beta-1', type=float, default=0.5, help='exponential decay rate for 1st moment of Adam optimizer for generator and discriminator')
@@ -432,12 +431,8 @@ def main(opt):
         else:
             manager = None
 
-        p2p.fit(train_ds=train_dataset,
-                test_ds=test_dataset,
-                steps=p2p.config['steps'],
-                output_path=full_path,
-                checkpoint_manager=manager,
-                save_weights=p2p.config['save_weights'])
+        p2p.fit(train_ds=train_dataset, test_ds=test_dataset, output_path=full_path,
+                checkpoint_manager=manager, save_weights=p2p.config['save_weights'])
 
         # Output model metrics dict to log dir
         with open(os.path.join(log_dir, 'metrics.json'), 'w') as f:
@@ -446,12 +441,10 @@ def main(opt):
         # Output performance metrics figures
         for key in p2p.model_metrics.keys():
             df = pd.DataFrame(p2p.model_metrics[key]).reset_index()
-            df['index'] = df['index'] / 100000  # scale by 100,000
-            df.set_index('index', inplace=True)
-            if len(df) > 1000:  # Makes figure more interpretable with large number of steps
-                df = df.sample(n=1000, random_state=123)
-                df = df.sort_index()
-            make_fig(df, title=key, output_path=os.path.join(full_path, 'figs'))
+            batches_per_epoch = len(df) / p2p.config['epochs']  # Number of mini-batches per epoch
+            df['epoch'] = ((df['index'] // batches_per_epoch) + 1).astype('int')
+            agg = df.groupby('epoch')[0].mean()  # mean loss by epoch across batches
+            make_fig(agg, title='Pix2Pix ' + key, output_path=os.path.join(full_path, 'figs'))
 
     print("Done.")
 
