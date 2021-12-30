@@ -11,6 +11,7 @@ import matplotlib
 matplotlib.use('Agg') # suppresses plot
 from datetime import datetime
 from base_gan import GAN
+from utils import make_fig
 
 """
     Pix2Pix in Tensorflow
@@ -364,27 +365,6 @@ def parse_opt():
     assert (args.img_size == 256) or (args.img_size == 512), "img-size currently only supported for 256 x 256 or 512 x 512 pixels!"
 
     return args
-
-def make_fig(df, title, output_path):
-    '''
-    Creates two line graphs in same figure using Matplotlib. Outputs as PNG to disk.
-    :param df: pd.Series
-    :param title: str, title of figure. Also used to name PNG plot when outputted to disk.
-    :param output_path: str, path to output PNG
-    :return: None, writes figure to disk
-    '''
-    plt.figure(figsize=(10, 8), dpi=80)
-    plt.plot(df, alpha=0.7, label='Raw')
-    plt.plot(df.ewm(alpha=0.1).mean(), color='red', linewidth=2, label='Weighted Mean')
-    plt.xlabel('Step (100,000s)')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.title(f'Pix2Pix {title}')
-    plt.tight_layout()
-    os.makedirs(output_path, exist_ok=True)  # Creates output directory if not existing
-    plt.savefig(os.path.join(output_path, f'{title}.png'), dpi=200)
-    plt.close()
-
 
 def main(opt):
     """
