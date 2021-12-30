@@ -202,6 +202,7 @@ class CycleGAN(GAN):
         plt.savefig(os.path.join(plot_path, f"{img_file_prefix}_{image_nr}.png"), dpi=200)
         plt.close()
 
+    @tf.function
     def train_step(self, real_x, real_y, epoch):
         """
         :param real_x:

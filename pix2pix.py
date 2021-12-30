@@ -181,7 +181,8 @@ class Pix2Pix(GAN):
 
         return total_gen_loss, gan_loss, gan_loss2
 
-    def train_step(self, input_image, target):
+    @tf.function
+    def train_step(self, input_image: tf.Tensor, target: tf.Tensor):
         """
         :param input_image:
         :param target:
