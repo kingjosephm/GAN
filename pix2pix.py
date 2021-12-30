@@ -237,13 +237,13 @@ class Pix2Pix(GAN):
         plt.savefig(os.path.join(plot_path, f'epoch_{epoch}.png'), dpi=200)
         plt.close()
 
-    def fit(self, train_ds, test_ds, steps, output_path, checkpoint_manager=None, save_weights=True):
+    def fit(self, train_ds: tf.Tensor, test_ds: tf.Tensor, output_path: str, checkpoint_manager=None, save_weights: str = 'true'):
         """
         :param train_ds:
         :param test_ds:
         :param output_path: str, path to output test images across training epochs
         :param checkpoint_manager:
-        :param save_weights: bool, whether to save model weights per 5k training steps and at end, along with model checkpoints
+        :param save_weights: str, whether or not to save model weights
         :return:
         """
 
@@ -341,7 +341,7 @@ def parse_opt():
     parser.add_argument('--batch-size', type=int, default=1, help='batch size per replica')
     parser.add_argument('--buffer-size', type=int, default=99999, help='buffer size')
     parser.add_argument('--channels', type=str, default='1', choices=['1', '3'], help='number of color channels to read in and output')
-    parser.add_argument('--no-log', action='store_true', help='turn off script logging, e.g. for CLI debugging')
+    parser.add_argument('--logging', type=str, default='true', choices=['true', 'false'], help='turn on/off script logging, e.g. for CLI debugging')
     parser.add_argument('--generator-loss', type=str, default='l1', choices=['l1', 'ssim'], help='combined generator loss function')
     parser.add_argument('--input-img-orient', type=str, default='left', choices=['left', 'right'], help='whether input image is on left (i.e. target right) or vice-versa')
     # Mode
@@ -352,8 +352,8 @@ def parse_opt():
     parser.add_argument('--save-weights', type=str, default='true', choices=['true', 'false'], help='save model checkpoints and weights')
     parser.add_argument('--epochs', type=int, default=5, help='number of epochs to train', required='--train' in sys.argv)
     parser.add_argument('--lambda', type=int, default=100, help='lambda value for secondary generator loss (L1)')
-    parser.add_argument('--learning-rate', type=float, default=0.0002, help='learning rate for Adam optimizer for generator and discriminator')
-    parser.add_argument('--beta-1', type=float, default=0.5, help='exponential decay rate for 1st moment of Adam optimizer for generator and discriminator')
+    parser.add_argument('--learning-rate', type=float, default=0.001, help='learning rate for Adam optimizer for generator and discriminator')
+    parser.add_argument('--beta-1', type=float, default=0.9, help='exponential decay rate for 1st moment of Adam optimizer for generator and discriminator')
     parser.add_argument('--beta-2', type=float, default=0.999,  help='exponential decay rate for 2st moment of Adam optimizer for generator and discriminator')
     # Predict param
     parser.add_argument('--weights', type=str, help='path to pretrained model weights for prediction',
@@ -400,7 +400,7 @@ def main(opt):
     # Log results
     log_dir = os.path.join(full_path, 'logs')
     os.makedirs(log_dir, exist_ok=False)
-    if not opt.no_log:
+    if opt.logging == 'true':
         sys.stdout = open(os.path.join(log_dir, "Log.txt"), "w")
         sys.stderr = sys.stdout
 
@@ -425,7 +425,7 @@ def main(opt):
         train_dataset, test_dataset = p2p.image_pipeline(predict=False)
 
         # Outputting model checkpoints
-        if opt.save_weights:
+        if opt.save_weights == 'true':
             checkpoint_dir = os.path.join(full_path, 'training_checkpoints')
             manager = tf.train.CheckpointManager(checkpoint, checkpoint_dir, max_to_keep=3)
         else:

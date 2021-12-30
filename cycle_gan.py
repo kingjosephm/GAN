@@ -270,7 +270,7 @@ class CycleGAN(GAN):
         return gen_g_loss, gen_f_loss, total_cycle_loss, total_gen_g_loss, total_gen_f_loss, \
                disc_x_loss, disc_y_loss
 
-    def fit(self, train_X, train_Y, test_X, epochs: int, output_path: str, checkpoint_manager=None, save_weights: bool = True):
+    def fit(self, train_X: tf.Tensor, train_Y: tf.Tensor, test_X: tf.Tensor, output_path: str, checkpoint_manager=None, save_weights: str = 'true'):
 
         print("\nTraining...\n", flush=True)
 
@@ -278,8 +278,9 @@ class CycleGAN(GAN):
 
         start = time.time()
 
-        for epoch in range(epochs):
+        for epoch in range(self.config['epochs']):
 
+            mini_batch_count = 1
             for image_x, image_y in tf.data.Dataset.zip((train_X, train_Y)):
 
                 gen_g_loss, gen_f_loss, total_cycle_loss, total_gen_g_loss, total_gen_f_loss, \
@@ -301,13 +302,13 @@ class CycleGAN(GAN):
                 mini_batch_count += 1
 
             # Every 5 epochs save weights and generate predicted image
-            if (epoch + 1) % 5 == 0:
-                if save_weights:
+            if ((epoch + 1) % 5 == 0) and ((epoch + 1) != self.config['epochs']):
+                if save_weights == 'true':
                     checkpoint_manager.save()
                 self.generate_images(self.generator_g, example_X, epoch+1, output_path)
 
             if (epoch + 1) == self.config['epochs']:
-                if save_weights:
+                if save_weights == 'true':
                     checkpoint_manager.save()
                 self.generate_images(self.generator_g, example_X, epoch+1, output_path)
 
@@ -352,7 +353,7 @@ def parse_opt():
     parser.add_argument('--batch-size', type=int, default=1, help='batch size')
     parser.add_argument('--buffer-size', type=int, default=99999, help='buffer size')
     parser.add_argument('--channels', type=str, default='1', choices=['1', '3'], help='number of color channels to read in and output')
-    parser.add_argument('--no-log', action='store_true', help='turn off script logging, e.g. for CLI debugging')
+    parser.add_argument('--logging', type=str, default='true', choices=['true', 'false'], help='turn on/off script logging, e.g. for CLI debugging')
     # Mode
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--train', action='store_true', help='train model using data')
@@ -360,12 +361,10 @@ def parse_opt():
     # Train params
     parser.add_argument('--target-images', type=str, help='path to target images', required='--train' in sys.argv)
     parser.add_argument('--epochs', type=int, default=5, help='number of epochs to train', required='--train' in sys.argv)
-    group2 = parser.add_mutually_exclusive_group(required='--train' in sys.argv)
-    group2.add_argument('--save-weights', action='store_true', help='save model checkpoints and weights')
-    group2.add_argument('--no-save-weights', action='store_true', help='do not save model checkpoints or weights')
+    parser.add_argument('--save-weights', type=str, default='true', choices=['true', 'false'], help='save model checkpoints and weights')
     parser.add_argument('--lambda', type=int, default=10, help='lambda parameter value')
-    parser.add_argument('--learning-rate', type=float, default=0.0002, help='learning rate for Adam optimizer for generators and discriminators')
-    parser.add_argument('--beta-1', type=float, default=0.5, help='exponential decay rate for 1st moment of Adam optimizer for generators and discriminators')
+    parser.add_argument('--learning-rate', type=float, default=0.001, help='learning rate for Adam optimizer for generators and discriminators')
+    parser.add_argument('--beta-1', type=float, default=0.9, help='exponential decay rate for 1st moment of Adam optimizer for generators and discriminators')
     parser.add_argument('--beta-2', type=float, default=0.999,  help='exponential decay rate for 2st moment of Adam optimizer for generators and discriminators')
     # Predict param
     parser.add_argument('--weights', type=str, help='path to pretrained model weights for prediction',
@@ -406,7 +405,7 @@ def main(opt):
     # Log results
     log_dir = os.path.join(full_path, 'logs')
     os.makedirs(log_dir, exist_ok=True)
-    if not opt.no_log:
+    if opt.logging == 'true':
         sys.stdout = open(os.path.join(log_dir, "Log.txt"), "w")
         sys.stderr = sys.stdout
 
@@ -435,7 +434,7 @@ def main(opt):
         train_X, train_Y, test_X = cgan.image_pipeline(predict=False)
 
         # Outputting model checkpoints
-        if opt.save_weights:
+        if opt.save_weights == 'true':
             checkpoint_dir = os.path.join(full_path, 'training_checkpoints')
             manager = tf.train.CheckpointManager(checkpoint, checkpoint_dir, max_to_keep=3)
         else:
