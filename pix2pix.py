@@ -309,7 +309,9 @@ class Pix2Pix(GAN):
             if ((epoch + 1) % 5 == 0) and ((epoch + 1) != self.config['epochs']):
                 if checkpoint_manager is not None:
                     checkpoint_manager.save()
-                self.generate_images(self.generator, example_input, example_target, path_filename=os.path.join(test_img_path, f"epoch_{epoch+1}.png"))  # use last image of batched ds
+                self.generate_images(self.generator, np.expand_dims(example_input[0], axis=0),
+                                     np.expand_dims(example_target[0], axis=0),
+                                     path_filename=os.path.join(test_img_path, f"epoch_{epoch+1}.png"))  # use first image of batched ds
 
             if (epoch + 1) == self.config['epochs']:
                 if checkpoint_manager is not None:
