@@ -1,9 +1,6 @@
-import os
-import random
 import tensorflow as tf
 from abc import ABC, abstractmethod
 from utils import InstanceNormalization
-import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg') # suppresses plot
 
@@ -17,41 +14,27 @@ matplotlib.use('Agg') # suppresses plot
 """
 
 tf.keras.backend.clear_session()
-tf.config.optimizer.set_jit(True)
 
 # Configure distributed training across GPUs, if available
 print("Num GPUs Available: ", len(tf.config.list_physical_devices("GPU")))
-if tf.config.list_physical_devices('GPU'):
-
-    # Limit memory usage
-    for dev in tf.config.list_physical_devices('GPU'):
-        tf.config.experimental.set_memory_growth(dev, True)
-
-    strategy = tf.distribute.MirroredStrategy()  # uses all GPUs available in container
-
-else:  # Use the Default Strategy
-    strategy = tf.distribute.OneDeviceStrategy('/CPU:0')  # use for debugging
-
 
 class GAN(ABC):
     def __init__(self, config):
         self.config = config
-        self.config['global_batch_size'] = self.config['batch_size'] * strategy.num_replicas_in_sync
-        self.strategy = strategy
         self.loss_obj = self.loss_object()
 
-    def load(self, image_file, resize=False):
+    def load(self, image_file: str, resize: bool = False):
         """
-        :param image_file:
+        :param image_file: str, full path to image file
         :param resize: bool, whether to resize image on read in to ensure consistently-sized images in tensor
-        :return:
+        :return: tf.Tensor
         """
         # Read and decode an image file to a uint8 tensor
         image = tf.io.read_file(image_file)
         try:
-            image = tf.image.decode_png(image)
+            image = tf.image.decode_png(image, channels=int(self.config['channels']))
         except:
-            image = tf.image.decode_jpeg(image)
+            image = tf.image.decode_jpeg(image, channels=int(self.config['channels']))
 
         # Cast to float32 tensors
         image = tf.cast(image, tf.float32)
@@ -60,21 +43,7 @@ class GAN(ABC):
             image = self.resize(image, self.config['img_size'], self.config['img_size'])
         return image
 
-    def show_img(self):
-        """
-        View random input image
-        :return:
-        """
-        img_list = [i for i in os.listdir(self.config['data']) if '.png' in i or '.jpeg' in i]
-        random_img = ''.join(random.sample(img_list, 1))
-        input, real = self.load(self.config['data'] + f'/{random_img}')
-        # Casting to int for matplotlib to display the images
-        plt.figure()
-        plt.imshow(input / 255.0)
-        plt.figure()
-        plt.imshow(real / 255.0)
-
-    def resize(self, image, height, width):
+    def resize(self, image: tf.Tensor, height: int, width: int):
         """
         :param image:
         :param height:
@@ -84,14 +53,14 @@ class GAN(ABC):
         return tf.image.resize(image, [height, width], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
 
     # Normalizing the images to [-1, 1]
-    def normalize(self, image):
+    def normalize(self, image: tf.Tensor):
         """
         :param image:
         :return:
         """
         return (image / 127.5) - 1
 
-    def downsample(self, filters, size, norm_type='batchnorm', apply_norm=True):
+    def downsample(self, filters: int, size: int, norm_type: str = 'batchnorm', apply_norm: bool = True):
         """Downsamples an input.
         Conv2D => Batchnorm => LeakyRelu
         Args:
@@ -119,7 +88,7 @@ class GAN(ABC):
 
         return result
 
-    def upsample(self, filters, size, norm_type='batchnorm', apply_dropout=False):
+    def upsample(self, filters: int, size: int, norm_type: str = 'batchnorm', apply_dropout: bool = False):
         """Upsamples an input.
         Conv2DTranspose => Batchnorm => Dropout => Relu
         Args:
@@ -152,7 +121,7 @@ class GAN(ABC):
 
         return result
 
-    def Discriminator(self, norm_type='batchnorm', target=True):
+    def Discriminator(self, norm_type: str = 'batchnorm', target: bool = True):
         """PatchGan discriminator model (https://arxiv.org/abs/1611.07004).
         Args:
           norm_type: Type of normalization. Either 'batchnorm' or 'instancenorm'.
@@ -160,50 +129,108 @@ class GAN(ABC):
         Returns:
           Discriminator model
         """
-        with self.strategy.scope():
-            initializer = tf.random_normal_initializer(0., 0.02)
+        initializer = tf.random_normal_initializer(0., 0.02)
 
-            inp = tf.keras.layers.Input(shape=[None, None, int(self.config['channels'])], name='input_image')
-            x = inp
+        inp = tf.keras.layers.Input(shape=[None, None, int(self.config['channels'])], name='input_image')
+        x = inp
 
-            if target:
-                tar = tf.keras.layers.Input(shape=[None, None, int(self.config['channels'])], name='target_image')
-                x = tf.keras.layers.concatenate([inp, tar])  # (bs, 256, 256, channels*2)
+        if target:
+            tar = tf.keras.layers.Input(shape=[None, None, int(self.config['channels'])], name='target_image')
+            x = tf.keras.layers.concatenate([inp, tar])  # (bs, 256, 256, channels*2)
 
-            down1 = self.downsample(64, 4, norm_type, False)(x)  # (bs, 128, 128, 64)
-            down2 = self.downsample(128, 4, norm_type)(down1)  # (bs, 64, 64, 128)
-            down3 = self.downsample(256, 4, norm_type)(down2)  # (bs, 32, 32, 256)
+        down1 = self.downsample(64, 4, norm_type, False)(x)  # (bs, 128, 128, 64)
+        down2 = self.downsample(128, 4, norm_type)(down1)  # (bs, 64, 64, 128)
+        down3 = self.downsample(256, 4, norm_type)(down2)  # (bs, 32, 32, 256)
 
-            zero_pad1 = tf.keras.layers.ZeroPadding2D()(down3)  # (bs, 34, 34, 256)
-            conv = tf.keras.layers.Conv2D(
-                512, 4, strides=1, kernel_initializer=initializer,
-                use_bias=False)(zero_pad1)  # (bs, 31, 31, 512)
+        zero_pad1 = tf.keras.layers.ZeroPadding2D()(down3)  # (bs, 34, 34, 256)
+        conv = tf.keras.layers.Conv2D(
+            512, 4, strides=1, kernel_initializer=initializer,
+            use_bias=False)(zero_pad1)  # (bs, 31, 31, 512)
 
-            if norm_type.lower() == 'batchnorm':
-                norm1 = tf.keras.layers.BatchNormalization()(conv)
-            elif norm_type.lower() == 'instancenorm':
-                norm1 = InstanceNormalization()(conv)
+        if norm_type.lower() == 'batchnorm':
+            norm1 = tf.keras.layers.BatchNormalization()(conv)
+        elif norm_type.lower() == 'instancenorm':
+            norm1 = InstanceNormalization()(conv)
 
-            leaky_relu = tf.keras.layers.LeakyReLU()(norm1)
+        leaky_relu = tf.keras.layers.LeakyReLU()(norm1)
 
-            zero_pad2 = tf.keras.layers.ZeroPadding2D()(leaky_relu)  # (bs, 33, 33, 512)
+        zero_pad2 = tf.keras.layers.ZeroPadding2D()(leaky_relu)  # (bs, 33, 33, 512)
 
-            last = tf.keras.layers.Conv2D(
-                1, 4, strides=1,
-                kernel_initializer=initializer)(zero_pad2)  # (bs, 30, 30, 1)
+        last = tf.keras.layers.Conv2D(
+            1, 4, strides=1,
+            kernel_initializer=initializer)(zero_pad2)  # (bs, 30, 30, 1)
 
-            if target:
-                return tf.keras.Model(inputs=[inp, tar], outputs=last)
-            else:
-                return tf.keras.Model(inputs=inp, outputs=last)
+        if target:
+            return tf.keras.Model(inputs=[inp, tar], outputs=last)
+        else:
+            return tf.keras.Model(inputs=inp, outputs=last)
+
+    def Generator(self, norm_type='batchnorm', shape: tuple = (None, None, None)):
+        """
+        Modified u-net generator model (https://arxiv.org/abs/1611.07004).
+        Args:
+          norm_type: Type of normalization. Either 'batchnorm' or 'instancenorm'.
+        Returns:
+          Generator model
+        """
+
+        inputs = tf.keras.layers.Input(shape=[shape[0], shape[1], shape[2]])
+
+        down_stack = [
+            self.downsample(64, 4, norm_type, apply_norm=False),  # (bs, 128, 128, 64)
+            self.downsample(128, 4, norm_type),  # (bs, 64, 64, 128)
+            self.downsample(256, 4, norm_type),  # (bs, 32, 32, 256)
+            self.downsample(512, 4, norm_type),  # (bs, 16, 16, 512)
+            self.downsample(512, 4, norm_type),  # (bs, 8, 8, 512)
+            self.downsample(512, 4, norm_type),  # (bs, 4, 4, 512)
+            self.downsample(512, 4, norm_type),  # (bs, 2, 2, 512)
+            self.downsample(512, 4, norm_type),  # (bs, 1, 1, 512)
+        ]
+
+        up_stack = [
+            self.upsample(512, 4, norm_type, apply_dropout=True),  # (bs, 2, 2, 1024)
+            self.upsample(512, 4, norm_type, apply_dropout=True),  # (bs, 4, 4, 1024)
+            self.upsample(512, 4, norm_type, apply_dropout=True),  # (bs, 8, 8, 1024)
+            self.upsample(512, 4, norm_type),  # (bs, 16, 16, 1024)
+            self.upsample(256, 4, norm_type),  # (bs, 32, 32, 512)
+            self.upsample(128, 4, norm_type),  # (bs, 64, 64, 256)
+            self.upsample(64, 4, norm_type),  # (bs, 128, 128, 128)
+        ]
+
+        initializer = tf.random_normal_initializer(0., 0.02)
+        last = tf.keras.layers.Conv2DTranspose(
+            shape[2], 4, strides=2,
+            padding='same', kernel_initializer=initializer,
+            activation='tanh')  # (bs, height, width, n_channels)
+
+        concat = tf.keras.layers.Concatenate()
+
+        x = inputs
+
+        # Downsampling through the model
+        skips = []
+        for down in down_stack:
+            x = down(x)
+            skips.append(x)
+
+        skips = reversed(skips[:-1])
+
+        # Upsampling and establishing the skip connections
+        for up, skip in zip(up_stack, skips):
+            x = up(x)
+            x = concat([x, skip])
+
+        x = last(x)
+
+        return tf.keras.Model(inputs=inputs, outputs=x)
 
     def loss_object(self):
         """
         :return:
         """
-        return tf.keras.losses.BinaryCrossentropy(from_logits=True, reduction=tf.keras.losses.Reduction.NONE)
+        return tf.keras.losses.BinaryCrossentropy(from_logits=True)
 
-    def discriminator_loss(self, real, generated, factor=1.0):
+    def discriminator_loss(self, real, generated, factor: float = 1.0):
         """
         Discriminator loss.
         :param real:
@@ -212,21 +239,17 @@ class GAN(ABC):
         :return:
             total_discriminator_loss: float
         """
-        with self.strategy.scope():
-            real_loss = tf.reduce_sum(self.loss_obj(tf.ones_like(real), real)) * (1. / self.config['global_batch_size'])
-            generated_loss = tf.reduce_sum(self.loss_obj(tf.zeros_like(generated), generated)) * (
-                        1. / self.config['global_batch_size'])
+        real_loss = self.loss_obj(tf.ones_like(real), real)
+        generated_loss = self.loss_obj(tf.zeros_like(generated), generated)
 
-            return (real_loss + generated_loss) * factor
+        return (real_loss + generated_loss) * factor
 
-    def optimizer(self, learning_rate=2e-4, beta_1=0.5, beta_2=0.999):
+    def optimizer(self, learning_rate: float = 2e-4, beta_1: float = 0.5, beta_2: float = 0.999):
         """
         Optimizer for both generator and discriminators
         :return: tf.keras Adam optimizer
         """
-        with self.strategy.scope():
-            optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=beta_1, beta_2=beta_2)
-        return optimizer
+        return tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=beta_1, beta_2=beta_2)
 
     @abstractmethod
     def random_crop(self, *args, **kwargs):
@@ -250,10 +273,6 @@ class GAN(ABC):
 
     @abstractmethod
     def generator_loss(self, *args, **kwargs):
-        return
-
-    @abstractmethod
-    def Generator(self, *args, **kwargs):
         return
 
     @abstractmethod
