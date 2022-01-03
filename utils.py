@@ -29,22 +29,25 @@ class InstanceNormalization(tf.keras.layers.Layer):
     normalized = (x - mean) * inv
     return self.scale * normalized + self.offset
 
-def make_fig(df: pd.DataFrame, title: str, output_path: str):
-    '''
-    Creates two line graphs in same figure using Matplotlib. Outputs as PNG to disk.
-    :param df: pd.Series, mean loss by epoch
-    :param title: str, title of figure. Also used to name PNG plot when outputted to disk.
-    :param output_path: str, path to output PNG
-    :return: None, writes figure to disk
-    '''
-    plt.figure(figsize=(10, 8), dpi=80)
-    plt.plot(df, alpha=0.7, label='Epoch Mean')
-    plt.plot(df.ewm(alpha=0.1).mean(), color='red', linewidth=2, label='Weighted Epoch Mean')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.title(f'{title}')
-    plt.tight_layout()
-    os.makedirs(output_path, exist_ok=True)  # Creates output directory if not existing
-    plt.savefig(os.path.join(output_path, f'{title}.png'), dpi=200)
-    plt.close()
+def pix2pix_losses():
+    """
+    Instantiates empty dictionary with each Pix2Pix cost function
+    :return: dict
+    """
+    return {'Generator Total Loss': [],
+            'Generator Loss (Primary)': [],
+            'Generator Loss (Secondary)': [],
+            'Discriminator Loss': []}
+
+def cyclegan_losses():
+    """
+    Instantiates empty dictionary with each CycleGAN cost function
+    :return: dict
+    """
+    return {'X->Y Generator Loss': [],
+            'Y->X Generator Loss': [],
+            'Total Cycle Loss': [],
+            'Total X->Y Generator Loss': [],
+            'Total Y->X Generator Loss': [],
+            'Discriminator X Loss': [],
+            'Discriminator Y Loss': []}

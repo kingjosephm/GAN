@@ -11,7 +11,8 @@ import matplotlib
 matplotlib.use('Agg') # suppresses plot
 from datetime import datetime
 from base_gan import GAN
-from utils import make_fig
+from utils import pix2pix_losses
+import numpy as np
 
 """
     Pix2Pix in Tensorflow
@@ -29,10 +30,6 @@ class Pix2Pix(GAN):
         self.discriminator = super().Discriminator(target=True)
         self.generator_optimizer = super().optimizer(learning_rate=self.config['learning_rate'], beta_1=self.config['beta_1'], beta_2=self.config['beta_2'])
         self.discriminator_optimizer = super().optimizer(learning_rate=self.config['learning_rate'], beta_1=self.config['beta_1'], beta_2=self.config['beta_2'])
-        self.model_metrics = {'Generator Total Loss': [],
-                              'Generator Loss (Primary)': [],
-                              'Generator Loss (Secondary)': [],
-                              'Discriminator Loss': []}
 
     def split_img(self, image_file: str):
         """
@@ -129,34 +126,44 @@ class Pix2Pix(GAN):
         assert contents, "No images found in data directory!"
 
         if predict:  # all images in `train` used for prediction; they're not training images, only kept for consistency
+
             train = tf.data.Dataset.from_tensor_slices([self.config['data'] + '/' + i for i in contents])
             train = train.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
-            # Note - no shuffling necessary
-            train = train.batch(self.config["batch_size"])
+
+            val = None
             test = None
 
-        else:  # if train mode, break into train/test
-            assert len(contents) >= 2, f"Insufficient number of training examples in data directory! " \
-                                          f"At least 2 are required, but found {len(contents)}!"
+        else:  # if train mode, break into train/val subsets
 
-            # Randomly select 1 image to view training progress
-            test = random.sample(contents, 1)
-            train = [i for i in contents if i not in test]
+            random.seed(self.config['seed'])
 
+            # Get subsets
+            test = random.sample(contents, self.config['test_img'])
+
+            val_obs = np.ceil((len(contents)-self.config['test_img']) * self.config['validation_size'])
+            val = random.sample([i for i in contents if i not in test], int(val_obs))
+
+            train = [i for i in contents if i not in test and i not in val]
+
+            # Convert to tf.Dataset
             test = tf.data.Dataset.from_tensor_slices([self.config['data'] + '/' + i for i in test])
+            val = tf.data.Dataset.from_tensor_slices([self.config['data'] + '/' + i for i in val])
             train = tf.data.Dataset.from_tensor_slices([self.config['data'] + '/' + i for i in train])
 
-            # process test images
+            # Process each subset
             test = test.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
-            # Note - no shuffling necessary since just one test image
             test = test.batch(self.config["batch_size"]).prefetch(buffer_size=tf.data.AUTOTUNE)
 
-            # process training images
+            val = val.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
+            val = val.shuffle(self.config['buffer_size'], reshuffle_each_iteration=True)
+            val = val.batch(self.config["batch_size"]).prefetch(buffer_size=tf.data.AUTOTUNE)
+
+            # Process training images
             train = train.map(self.process_images_train, num_parallel_calls=tf.data.AUTOTUNE)
             train = train.shuffle(self.config['buffer_size'], reshuffle_each_iteration=True)
             train = train.batch(self.config["batch_size"]).prefetch(buffer_size=tf.data.AUTOTUNE)
 
-        return train, test
+        return train, val, test
 
     def generator_loss(self, disc_generated_output, gen_output, target, input_image):
         """
@@ -182,10 +189,11 @@ class Pix2Pix(GAN):
         return total_gen_loss, gan_loss, gan_loss2
 
     @tf.function
-    def train_step(self, input_image: tf.Tensor, target: tf.Tensor):
+    def train_step(self, input_image: tf.Tensor, target: tf.Tensor, training: bool = True):
         """
-        :param input_image:
-        :param target:
+        :param input_image: tf.Tensor, thermal image
+        :param target: tf.Tensor, grayscale true image
+        :param training: bool, whether or not training mode
         :return:
         """
 
@@ -196,26 +204,27 @@ class Pix2Pix(GAN):
             disc_generated_output = self.discriminator([input_image, gen_output], training=True)
 
             gen_total_loss, gen_gan_loss, gen_gan_loss2 = self.generator_loss(disc_generated_output, gen_output, target, input_image)
-            disc_loss = self.discriminator_loss(disc_real_output, disc_generated_output)  # TF example lacked, but original code divides by 2, see https://github.com/phillipi/pix2pix/blob/89ff2a81ce441fbe1f1b13eca463b87f1e539df8/train.lua#L254
+            disc_loss = self.discriminator_loss(disc_real_output, disc_generated_output, 0.5)  # TF example lacked, but original code divides by 2, see https://github.com/phillipi/pix2pix/blob/89ff2a81ce441fbe1f1b13eca463b87f1e539df8/train.lua#L254
 
-        generator_gradients = gen_tape.gradient(gen_total_loss, self.generator.trainable_variables)
-        discriminator_gradients = disc_tape.gradient(disc_loss, self.discriminator.trainable_variables)
+        if training:  # don't want to update weights if not training
 
-        self.generator_optimizer.apply_gradients(zip(generator_gradients,
-                                                self.generator.trainable_variables))
-        self.discriminator_optimizer.apply_gradients(zip(discriminator_gradients,
-                                                    self.discriminator.trainable_variables))
+            generator_gradients = gen_tape.gradient(gen_total_loss, self.generator.trainable_variables)
+            discriminator_gradients = disc_tape.gradient(disc_loss, self.discriminator.trainable_variables)
 
-        return gen_total_loss, gen_gan_loss, gen_gan_loss2, disc_loss  # return model metrics as unable to convert to numpy within @tf.function
+            self.generator_optimizer.apply_gradients(zip(generator_gradients,
+                                                    self.generator.trainable_variables))
+            self.discriminator_optimizer.apply_gradients(zip(discriminator_gradients,
+                                                        self.discriminator.trainable_variables))
 
-    def generate_images(self, model: tf.keras.Model, test_input: tf.Tensor, tar: tf.Tensor, epoch: int, output_path: str):
+        return gen_total_loss, gen_gan_loss, gen_gan_loss2, disc_loss
+
+    def generate_images(self, model: tf.keras.Model, test_input: np.array, tar: np.array, path_filename: str):
         """
         :param model:
-        :param test_input:
-        :param tar:
-        :param epoch:
-        :param output_path:
-        :return:
+        :param test_input: array-like, tf.Tensor or numpy array, batched dataset of generated images
+        :param tar: array-like, tf.Tensor or numpy array, batched dataset of true images
+        :param path_filename: str, full path and file name including suffix
+        :return: None
         """
         prediction = model(test_input, training=True)
         plt.figure(figsize=(15, 6))
@@ -234,105 +243,99 @@ class Pix2Pix(GAN):
             plt.axis('off')
             plt.tight_layout()
 
-        plot_path = os.path.join(output_path, 'test_images')
-        os.makedirs(plot_path, exist_ok=True) # dir should not exist
-        plt.savefig(os.path.join(plot_path, f'epoch_{epoch}.png'), dpi=200)
+        plt.savefig(path_filename, dpi=200)
         plt.close()
 
-    def fit(self, train_ds: tf.Tensor, test_ds: tf.Tensor, output_path: str, checkpoint_manager=None, save_weights: str = 'true'):
+    def fit(self, train_ds: tf.Tensor, val_ds: tf.Tensor, test_ds: tf.Tensor, output_path: str, checkpoint_manager=None):
         """
-        :param train_ds:
-        :param test_ds:
+        :param train_ds: tf.Tensor, training dataset
+        :param val_ds: tf.Tensor, validation dataset
+        :param test_ds: tf.Tensor, test dataset
         :param output_path: str, path to output test images across training epochs
-        :param checkpoint_manager:
-        :param save_weights: str, whether or not to save model weights
+        :param checkpoint_manager: tf.train.CheckpointManager or None
         :return:
         """
 
         print("\nTraining...\n", flush=True)
 
-        example_input, example_target = next(iter(test_ds.take(1)))
-
+        example_input, example_target = next(iter(test_ds.take(1)))  # returns batched dataset
         start = time.time()
+
+        # Cost functions: average loss per epoch
+        train_cost_functions = pix2pix_losses()
+        val_cost_functions = pix2pix_losses()
 
         for epoch in range(self.config['epochs']):
 
             mini_batch_count = 1
+            train_losses = pix2pix_losses()
+            val_losses = pix2pix_losses()
+
             for step, (input_image, target) in enumerate(train_ds):  # each step is a mini-batch
+                gen_total_loss, gen_gan_loss, gen_gan_loss2, disc_loss = self.train_step(input_image, target, True)
 
-                gen_total_loss, gen_gan_loss, gen_gan_loss2, disc_loss = self.train_step(input_image, target)
+                train_losses['Generator Total Loss'].append(gen_total_loss.numpy().tolist())
+                train_losses['Generator Loss (Primary)'].append(gen_gan_loss.numpy().tolist())
+                train_losses['Generator Loss (Secondary)'].append(gen_gan_loss2.numpy().tolist())
+                train_losses['Discriminator Loss'].append(disc_loss.numpy().tolist())
 
-                # Performance metrics from step into dict
-                # Note - must be done outside self.train_step() as numpy operations do not work in tf.function
-                self.model_metrics['Generator Total Loss'].append(gen_total_loss.numpy().tolist())
-                self.model_metrics['Generator Loss (Primary)'].append(gen_gan_loss.numpy().tolist())
-                self.model_metrics['Generator Loss (Secondary)'].append(gen_gan_loss2.numpy().tolist())
-                self.model_metrics['Discriminator Loss'].append(disc_loss.numpy().tolist())
-
-                if mini_batch_count % 100 == 0:  # counter for every 100 mini-batches
+                if mini_batch_count % 100 == 0:  # counter for every 100 mini-batches per epoch
                     print('.', end='', flush=True)
 
                 mini_batch_count += 1
 
-            # Every 5 epochs save weights and generate predicted image
+            # Append average of training loss functions per mini-batch to train cost function
+            for key in train_losses.keys():
+                train_cost_functions[key].append(sum(train_losses[key]) / len(train_losses[key]))
+
+            # Evaluate using validation dataset
+            for step, (input_image, target) in enumerate(val_ds):
+                gen_total_loss, gen_gan_loss, gen_gan_loss2, disc_loss = self.train_step(input_image, target, False)
+
+                val_losses['Generator Total Loss'].append(gen_total_loss.numpy().tolist())
+                val_losses['Generator Loss (Primary)'].append(gen_gan_loss.numpy().tolist())
+                val_losses['Generator Loss (Secondary)'].append(gen_gan_loss2.numpy().tolist())
+                val_losses['Discriminator Loss'].append(disc_loss.numpy().tolist())
+
+            # Append average of val loss functions per mini-batch to val cost function
+            for key in val_losses.keys():
+                val_cost_functions[key].append(sum(val_losses[key]) / len(val_losses[key]))
+
+            # Make directory for output of test images
+            test_img_path = output_path+'/test_images'
+            os.makedirs(test_img_path, exist_ok=True)
+
+            # Every 5 epochs save weights and generate predicted image(s)
             if ((epoch + 1) % 5 == 0) and ((epoch + 1) != self.config['epochs']):
-                if save_weights == 'true':
+                if checkpoint_manager is not None:
                     checkpoint_manager.save()
-                self.generate_images(self.generator, example_input, example_target, epoch+1, output_path)
+                self.generate_images(self.generator, example_input, example_target, path_filename=os.path.join(test_img_path, f"epoch_{epoch+1}.png"))  # use last image of batched ds
 
-            # At end save checkpoint and final test image
             if (epoch + 1) == self.config['epochs']:
-                if save_weights == 'true':
+                if checkpoint_manager is not None:
                     checkpoint_manager.save()
-                self.generate_images(self.generator, example_input, example_target, epoch+1, output_path)
 
-            print(f'\nCumulative training duration at end of epoch {epoch + 1}: {time.time() - start:.2f} sec\n')
+            print(f'\nCumulative training duration at end of epoch {epoch + 1}: {(time.time() - start)/60:.2f} min')
+            print(f"Train generator loss: {round(train_cost_functions['Generator Total Loss'][-1], 2)}, train discriminator loss: {round(train_cost_functions['Discriminator Loss'][-1], 2)}")
+            print(f"Val generator loss: {round(val_cost_functions['Generator Total Loss'][-1], 2)}, val discriminator loss: {round(val_cost_functions['Discriminator Loss'][-1], 2)}\n")
 
-    def predict(self, pred_ds: tf.Tensor, output_path: str):
+        return train_cost_functions, val_cost_functions
+
+    def predict(self, predict_ds: tf.Tensor, output_path: str):
         """
-        :param pred_ds:
-        :param output_path:
-        :return:
+        Generates generated PNG images using supplied image dataset.
+        :param predict_ds: tensorflow.python.data.ops.dataset_ops.ParallelMapDataset
+        :param output_path: str, output path
+        :return: None
         """
-        print("\nRendering images using pretrained weights\n")
+        plot_path = os.path.join(output_path, 'prediction_images')
+        os.makedirs(plot_path, exist_ok=False)
 
-        img_nr = 0
-        for input, target in pred_ds:
-
-            prediction = self.generator(input, training=True)  # set to training=True as otherwise training not cumulative
-
-            # Three image subplots
-            plt.figure(figsize=(12, 6))
-            display_list = [input[0], target[0], prediction[0]]
-            title = ['Input Image', 'Ground Truth', 'Predicted Image']
-
-            for i in range(3):
-                plt.subplot(1, 3, i + 1)
-                plt.title(title[i])
-                # Getting the pixel values in the [0, 1] range to plot.
-                if self.config['channels'] == '1':
-                    plt.imshow(display_list[i] * 0.5 + 0.5, cmap=plt.get_cmap('gray'))
-                else:
-                    plt.imshow(display_list[i] * 0.5 + 0.5)
-                plt.axis('off')
-                plt.tight_layout()
-
-            plot_path = os.path.join(output_path, 'prediction_images')
-            os.makedirs(plot_path, exist_ok=True)  # dir should not exist
-            plt.savefig(os.path.join(plot_path, f'img_{img_nr}.png'), dpi=200)
-            plt.close()
-
-            # Just prediction image
-            plt.figure(figsize=(6, 6))
-            if self.config['channels'] == '1':
-                plt.imshow(prediction[0] * 0.5 + 0.5, cmap=plt.get_cmap('gray'))
-            else:
-                plt.imshow(prediction[0] * 0.5 + 0.5, cmap=plt.get_cmap('gray'))
-            plt.axis('off')
-            plt.tight_layout()
-            plt.savefig(os.path.join(plot_path, f'prediction_{img_nr}.png'), dpi=200)
-            plt.close()
-            img_nr += 1
+        # Output images
+        img_counter = 0
+        for i in predict_ds:
+            self.generate_images(self.generator, np.expand_dims(i[0], axis=0), np.expand_dims(i[1], axis=0), plot_path + "/" + f"img{img_counter}.png")  # function expects batched data
+            img_counter += 1
 
 def parse_opt():
     parser = argparse.ArgumentParser()
@@ -346,6 +349,7 @@ def parse_opt():
     parser.add_argument('--logging', type=str, default='true', choices=['true', 'false'], help='turn on/off script logging, e.g. for CLI debugging')
     parser.add_argument('--generator-loss', type=str, default='l1', choices=['l1', 'ssim'], help='combined generator loss function')
     parser.add_argument('--input-img-orient', type=str, default='left', choices=['left', 'right'], help='whether input image is on left (i.e. target right) or vice-versa')
+    parser.add_argument('--seed', type=int, default=123, help='seed value for random number generator')
     # Mode
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--train', action='store_true', help='train model using data')
@@ -354,6 +358,8 @@ def parse_opt():
     parser.add_argument('--save-weights', type=str, default='true', choices=['true', 'false'], help='save model checkpoints and weights')
     parser.add_argument('--epochs', type=int, default=5, help='number of epochs to train', required='--train' in sys.argv)
     parser.add_argument('--lambda', type=int, default=100, help='lambda value for secondary generator loss (L1)')
+    parser.add_argument('--validation-size', type=float, default=0.1, help='validation set size as share of number of training images')
+    parser.add_argument('--test-img', type=int, default=5, help='number of test images to sample')
     parser.add_argument('--learning-rate', type=float, default=0.001, help='learning rate for Adam optimizer for generator and discriminator')
     parser.add_argument('--beta-1', type=float, default=0.9, help='exponential decay rate for 1st moment of Adam optimizer for generator and discriminator')
     parser.add_argument('--beta-2', type=float, default=0.999,  help='exponential decay rate for 2st moment of Adam optimizer for generator and discriminator')
@@ -364,8 +370,31 @@ def parse_opt():
 
     # Verify image size
     assert (args.img_size == 256) or (args.img_size == 512), "img-size currently only supported for 256 x 256 or 512 x 512 pixels!"
+    assert (args.validation_size > 0.0 and args.validation_size <= 0.3), "validation size is a proportion and bounded between 0-0.3!"
+    assert (args.test_img >= 1), "test-img is an integer and must be >=1!"
 
     return args
+
+def make_fig(train: pd.DataFrame, val: pd.DataFrame, title: str, output_path: str):
+    '''
+    Creates two line graphs in same figure using Matplotlib. Outputs as PNG to disk.
+    :param train: pd.Series, mean loss by epoch across mini-batched in training set
+    :param val: pd.Series, mean loss by epoch across mini-batched in validation set
+    :param title: str, title of figure. Also used to name PNG plot when outputted to disk.
+    :param output_path: str, path to output PNG
+    :return: None, writes figure to disk
+    '''
+    plt.figure(figsize=(10, 8), dpi=80)
+    plt.plot(train, alpha=0.7, label='Training')
+    plt.plot(val, alpha=0.7, label='Validation')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.title(f'{title}')
+    plt.tight_layout()
+    os.makedirs(output_path, exist_ok=True)  # Creates output directory if not existing
+    plt.savefig(os.path.join(output_path, f'{title}.png'), dpi=200)
+    plt.close()
 
 def main(opt):
     """
@@ -398,34 +427,51 @@ def main(opt):
         json.dump(p2p.config, f)
 
     if opt.predict: # if predict mode
-        prediction_dataset, _ = p2p.image_pipeline(predict=True)
+        prediction_dataset, _, _ = p2p.image_pipeline(predict=True)
         checkpoint.restore(tf.train.latest_checkpoint(opt.weights)).expect_partial()  # Note - if crashes here this b/c mismatch in channel size between weights and instantiated Pix2Pix class
         p2p.predict(prediction_dataset, full_path)
 
     if opt.train: # if train mode
-        train_dataset, test_dataset = p2p.image_pipeline(predict=False)
+        train, validation, test = p2p.image_pipeline(predict=False)
 
         # Outputting model checkpoints
         if opt.save_weights == 'true':
             checkpoint_dir = os.path.join(full_path, 'training_checkpoints')
-            manager = tf.train.CheckpointManager(checkpoint, checkpoint_dir, max_to_keep=3)
+            manager = tf.train.CheckpointManager(checkpoint, checkpoint_dir, max_to_keep=1)
         else:
             manager = None
 
-        p2p.fit(train_ds=train_dataset, test_ds=test_dataset, output_path=full_path,
-                checkpoint_manager=manager, save_weights=p2p.config['save_weights'])
+        train_metrics, val_metrics = p2p.fit(train_ds=train, val_ds=validation, test_ds=test, output_path=full_path,
+                                             checkpoint_manager=manager)
+
+        # Output final test images
+        final_test_imgs = full_path+'/final_test_imgs'
+        os.makedirs(final_test_imgs, exist_ok=False)
+
+        img_counter = 0
+        for i in test.unbatch():
+            p2p.generate_images(p2p.generator, np.expand_dims(i[0], axis=0), np.expand_dims(i[1], axis=0), final_test_imgs + "/" + f"img{img_counter}.png")  # function expects batched data
+            img_counter += 1
 
         # Output model metrics dict to log dir
-        with open(os.path.join(log_dir, 'metrics.json'), 'w') as f:
-            json.dump(p2p.model_metrics, f)
+        with open(os.path.join(log_dir, 'train_metrics.json'), 'w') as f:
+            json.dump(train_metrics, f)
+        with open(os.path.join(log_dir, 'val_metrics.json'), 'w') as f:
+            json.dump(val_metrics, f)
 
         # Output performance metrics figures
-        for key in p2p.model_metrics.keys():
-            df = pd.DataFrame(p2p.model_metrics[key]).reset_index()
-            batches_per_epoch = len(df) / p2p.config['epochs']  # Number of mini-batches per epoch
-            df['epoch'] = ((df['index'] // batches_per_epoch) + 1).astype('int')
-            agg = df.groupby('epoch')[0].mean()  # mean loss by epoch across batches
-            make_fig(agg, title='Pix2Pix ' + key, output_path=os.path.join(full_path, 'figs'))
+        for key in train_metrics.keys():
+            tr = pd.DataFrame(train_metrics[key]).reset_index()
+            va = pd.DataFrame(val_metrics[key]).reset_index()
+
+            # non-zero-based epoch index
+            tr['index'] = tr['index'] + 1
+            tr = tr.set_index('index')
+
+            va['index'] = va['index'] + 1
+            va = va.set_index('index')
+
+            make_fig(tr, va, title='Pix2Pix ' + key, output_path=os.path.join(full_path, 'figs'))
 
     print("Done.")
 
