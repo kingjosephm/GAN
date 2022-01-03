@@ -51,3 +51,24 @@ def cyclegan_losses():
             'Total Y->X Generator Loss': [],
             'Discriminator X Loss': [],
             'Discriminator Y Loss': []}
+
+def make_fig(train: pd.DataFrame, val: pd.DataFrame, title: str, output_path: str):
+    '''
+    Creates two line graphs in same figure using Matplotlib. Outputs as PNG to disk.
+    :param train: pd.Series, mean loss by epoch across mini-batched in training set
+    :param val: pd.Series, mean loss by epoch across mini-batched in validation set
+    :param title: str, title of figure. Also used to name PNG plot when outputted to disk.
+    :param output_path: str, path to output PNG
+    :return: None, writes figure to disk
+    '''
+    plt.figure(figsize=(10, 8), dpi=80)
+    plt.plot(train, alpha=0.7, label='Training')
+    plt.plot(val, alpha=0.7, label='Validation')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.title(f'{title}')
+    plt.tight_layout()
+    os.makedirs(output_path, exist_ok=True)  # Creates output directory if not existing
+    plt.savefig(os.path.join(output_path, f'{title}.png'), dpi=200)
+    plt.close()
