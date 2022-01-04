@@ -1,5 +1,20 @@
 # Useful remote GPU server info
 
+### Create new docker volume using data on GPU cluster
+
+    docker volume create --name FLIR_data_matched \
+      --opt type=none \
+      --opt device=/home/kingj/FLIR_matched_gray_thermal \
+      --opt o=bind
+
+### Create new empty docker volume
+
+    docker volume create --name MERGEN_FLIR_output
+
+### List GPUs and their IDs
+
+    nvidia-smi --list-gpus
+
 ### Restart a previously instantiated, but stopped container in interactive mode
 
     docker start -i <container_ID or container_name>
