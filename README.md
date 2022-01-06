@@ -3,7 +3,7 @@ The code in this repository aims to develop a generative adversarial network (GA
 
 
 # Document contents and intended audience
-This document aims to serve four purposes. First, describe the code contained in this repository, how it was run on Booz Allen hardware, how to possibly run it on other hardware, and general performance expectations. Second, offer a brief explanation of the theory behind the code and the code relates to this theory.  Third, detail the training date used by this code and how they were obtained. Fourth, offer a summary of the existing results, prior experiments, outstanding issues, and potential future uses of the code. This document is written for a semi-technical audience that is presumed to have (some) familiarity with the Python language, deep neural networks, and computer vision models. We also aim to relate this repository to other repositories and efforts within the MERGEN project.
+This document aims to serve four purposes. First, describe the code contained in this repository, how it was run on Booz Allen hardware, how to possibly run it on other hardware, and general performance expectations. Second, offer a brief explanation of the theory behind the code and the code relates to this theory.  Third, detail the training date used by this code and how they were obtained. Fourth, offer a summary of the existing results, prior experiments, outstanding issues, and potential future uses of the code. This document is written for a semi-technical audience that is presumed to have (some) familiarity with the Python language, Linux, Docker, deep neural networks, and computer vision models. We also aim to relate this repository to other repositories and efforts within the MERGEN project.
 
 
 # Repository branches
@@ -23,7 +23,61 @@ We train our GAN models using paired thermal and visible images from [Teledyne F
 
 FLIR raw visible (i.e. RGB spectrum) images are 1024h x 1224w pixels, whereas thermal raw images are 512h x 640w pixels. Visible images were produced with a camera with a wider field-of-view and so alignment is necessary for (at least) the Pix2Pix model. The script, `./create_training_imgs/curate_FLIR_data.py`, pairs matched thermal and visible images, and aligns these to the overlapping portion of the visible image. Both thermal and RGB images are converted to grayscale (1-channel) and concatenated horizontally with the thermal on the left, visible on the right. These are stored on the MERGEN OneDrive Data folder in `FLIR_matched_rgb_thermal.zip`. In some cases, a matched image was not found, or it was corrupt. Correspondingly, the total number of matched thermal-visible images totals **28,279**. The script, `./create_training_imgs/separate_FLIR_data.py`, takes as input the concatenated matched images and separates them into child thermal and visible directories. Matched thermal and visible images retain the same file name as the original image for linkage purposes. These are stored on OneDrive's MERGEN Data folder in `FLIR_separated.zip`. Each curated FLIR image is 512h x 640w pixels (1-channel), which must be resized by both GAN models to 256x256 or 512x512 on read-in.
 
-Other data have also been previously used in this project. These data were collected by hand during the daytime only in local parking lots around the DC-Maryland-Virgina area and generally feature closely-cropped images of passenger vehicles. The originals of these images are stored on OneDrive in `original_thermal_visible_GAN_images.zip`. Concatenated thermal-visible images, not perfectly aligned, are found on OneDrive in `curated_thermal_visible_GAN_images.zip`. These images are each 512h x 640w pixels.
+Below are two paired images from the FLIR dataset:
+
+![example1](./example_images/example1.png)
+![example2](./example_images/example2.png)
+
+Other data have also been previously used in this project. These data were collected by hand during the daytime only in local parking lots around the DC-Maryland-Virgina area and generally feature closely-cropped images of passenger vehicles. The originals of these images are stored on OneDrive in `original_thermal_visible_GAN_images.zip`. Concatenated thermal-visible images, not perfectly aligned, are found on OneDrive in `curated_thermal_visible_GAN_images.zip`. These images are each 512h x 640w pixels. These are no longer being used in model development.
+
+# Code structure
+Code in this particular branch draws heavily from TensorFlow's excellent tutorials on [Pix2Pix](https://www.tensorflow.org/tutorials/generative/pix2pix) and [CycleGAN](https://www.tensorflow.org/tutorials/generative/cyclegan). The Generator and Discriminator that lie at the heart of these model are nearly identical in TensorFlow's example code. Both models also use several either identical or similar function. We therefore convert these into an abstract base class (ABC Class) in Python, which is a superclass that allows methods to be linked across subclasses, alleviating redundant code, and also ensuring standardization across subclasses.
+
+Specifically, the following scripts and their purposes are:
+
+- `base_gan.py`: ABC superclass containing core methods used by both Pix2Pix and CycleGAN subclasses
+- `pix2pix.py`: contains methods for Pix2Pix subclass
+- `cycle_gan.py`: contains methods for CycleGAN subclass
+- `utils.py`: contains helper functions for both GAN models
+- `requirements.txt`: contains full list of all dependencies used to implement this code
+- `README.md`: this script, explains the branch of this repository
+- `Docker_Linux_HELPME.md`: useful common commands for Docker and Linux
+- `driver.sh`: shell script to automate the uploading of other scripts in this branch to the GPU cluster
+- `./create_training_imgs/curate_FLIR_data.py`: pairs matched thermal and visible images, and aligns these to the overlapping portion of the visible image
+- `./create_training_imgs/separate_FLIR_data.py`, separates concatenated matched images into child thermal and visible directories
+
+# Running the code
+We execute the code in Docker (see explanation below), though focus in this section on how to call the code generally from command line. Note: this code was developed on a Mac and tested in a Linux (Docker) environment; its functionality in a PC environment is not guaranteed.
+
+### Pix2Pix
+
+    python3 pix2pix.py --train/predict --data=<path> --output=<path> [options*]
+
+<sup>*See script for options. Requirements differ for train and predict modes
+
+Data is expected in an undifferentiated (i.e. not in 'train', 'val', 'test' subdirectories) directory. The pix2pix script creates random subsets of train/val/test from the images. This script expects a horizontally concatenated image pair ***for both training and predict modes***. By default, the input image is on the left and the target image is on the right. This orientation can be changed by optionally supplying `--input-img-orient='right'`.
+
+Upon execution the script creates a new directory in the output location formatted as `YYYY-MM-DD-HHhmm`, corresponding to the datetime the script was initialized. In training mode, upon the completion the following subdirectories will be present:
+
+- `figs`: loss figures by epoch
+- `final_test_imgs`: generated images at the end of training using randomly-selected test images
+- `logs`: contains model parameters, a dictionary of training losses by epoch, a dictionary of validation losses by epoch, a log file
+- `test_images`: images generated from the first test image while training. Useful to see how training the generator progresses
+- `training_checkpoints`: contains final model, if the default `--save-weights='true'` is toggled
+
+In predict mode, the script creates the following subdirectories:
+
+- `logs`: contains information on the underlying model used to generate predictions
+- `prediction_images`: generated images, organized as inline plots with input, ground truth, and prediction
+
+### CycleGAN
+
+    python3 cycle_gan.py --train/predict --input-images=<path> --output=<path> [options*]
+
+<sup>*See script for options. Requirements differ for train and predict modes
+
+As with the pix2pix script, input image data is expected in an undifferentiated directory and random subsets of train/val/test will be created. For predict mode, only the `--input-images` path is required; for training mode, the `--target-images` path is also required. Model output for train and predict modes are the same as for `pix2pix.py`.
+
 
 # GPU cluster & Docker
 ### Data
