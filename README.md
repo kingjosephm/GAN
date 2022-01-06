@@ -79,31 +79,43 @@ In predict mode, the script creates the following subdirectories:
 As with the pix2pix script, input image data is expected in an undifferentiated directory and random subsets of train/val/test will be created. For predict mode, only the `--input-images` path is required; for training mode, the `--target-images` path is also required. Model output for train and predict modes are the same as for `pix2pix.py`.
 
 
-# GPU cluster & Docker
-### Data
-Concatenated, matched thermal-visible images are stored on the GPU cluster under `/home/kingj/FLIR_matched_gray_thermal`, while the separated versions are stored under `/home/kingj/FLIR_separated`.
+# GPU cluster 
+We use Booz Allen's Westborough CSN cluster, which runs has 4 GeForce RTX 2080 Ti GPUs. The UUIDs for these GPUs (allowing runs on specific GPUs) are:
 
-These are stored in the following Docker volumes:
+- GPU 0: GPU-8121da2f-b1c3-d231-a9ab-7d6f598ba2dd
+- GPU 1: GPU-7a7c102c-5f71-a0fd-2ac0-f45a63c82dc5
+- GPU 2: GPU-0c5076b3-fe4a-0cd8-e4b7-71c2037933c0
+- GPU 3: GPU-3c51591d-cfdb-f87c-ece8-8dcfdc81e67a
 
-    FLIR_data_matched <- concatenated thermal/visible images
-    FLIR_data_separated <- thermal and visible images separated into child subdirectories
+Data are stored on the cluster at:
 
-### Model output
-Output from a given model run is stored in the following Docker volume:
+- `/home/kingj/FLIR_matched_gray_thermal`: concatenated, matched thermal-visible images for Pix2Pix model
+- `/home/kingj/FLIR_separated`: separated versions for CycleGAN model
+
+
+# Docker
+We train the GAN models in a Docker container (see [this link](https://docs.docker.com/get-started/overview/) for general information on Docker). Also see `Docker_Linux_HELPME.md` for useful Docker and Linux commands. Containers create separate environments from the operating system, so training data and scripts must be moved into the container. Two options exist: create a [Docker volume](https://docs.docker.com/storage/volumes/) (preferred) that persists beyond the life of the container, or mount the data/scripts when the container is instantiated. Directly-mounted data/scripts do not persist beyond the life of the container.
+
+### Data volumes
+
+    FLIR_data_matched       <- concatenated, matched thermal-visible images for Pix2Pix model
+    FLIR_data_separated     <- separated versions for CycleGAN model
+
+### Model output volume
 
     MERGEN_FLIR_output
 
-Each run is put into a child directory according to the naming convention *YYYY-MM-DD-HHhmm*, where this datetime denotes the start execution datetime of the code.
-
 ### Docker image
-For this code, as well as the make-model classifier, the following Docker image was used:
+For this code, as well as the make-model classifier, the following image was used:
 
     king0759/tf2_gpu_jupyter_mpl:v3
 
 This (admittedly bloated) Docker image contains the packages listed in `requirements.txt`. Not all of the packages listed in this requirements file are strictly necessary for the code in this repository though.
 
-# Train model using Docker (detached)
-### Example 1: using Pix2Pix script
+
+# Train model using Docker
+
+## Pix2Pix example
     
     docker run -it \
         --name p2p \
@@ -116,7 +128,23 @@ This (admittedly bloated) Docker image contains the packages listed in `requirem
         --train --data=data --output=output --lambda=100 --epochs=200 \
         --batch-size=8 --logging='true' --save-weights='true'
 
-### Example 2: using CycleGAN script
+### Explanation:
+
+- `docker run`: starts a new container
+- `-it`: runs the container in interactive mode
+- `--name p2p`: specifies the container name as 'p2p', otherwise it'll be given a random one
+- `-d`: run the container detached. To work interactively in the container omit this
+- `--rm`: removes the container at the end of execution. Note - since output is stored in a volume this persists beyond the life of the container. It's also good practice to remove containers you're not using to reduce HD space
+- `--mount type=bind,source=/home/kingj/scripts,target=/scripts`: directly mount the `/home/kingj/scripts` directory, as `/scripts` within the container. Change the source and target directories as needed
+- `--mount source=FLIR_data_matched,target=/data`: mounts the previously-created data volume, `FLIR_data_matched` as `/data` within the container
+- `--mount source=MERGEN_FLIR_output,target=/output`: mounts the output volume
+- `--gpus device=GPU-3c51591d-cfdb-f87c-ece8-8dcfdc81e67a`: Specifies a particular GPU to use. To use all GPUs change this to `--gpus all`
+- `king0759/tf2_gpu_jupyter_mpl:v3`: container image. If not stored locally this will be downloaded from Docker Hub
+- `python3`: specifies the container should be instantated using Python. To instead instantiate using Bash enter `/bin/bash` or omit entirely (this is the default for this Docker image). Note - the software available in a container depends on the container image
+- `./scripts/pix2pix.py --train --data=data --output=output --lambda=100 --epochs=200 \
+    --batch-size=8 --logging='true' --save-weights='true'`: instructs the container to run the Pix2Pix script with the supplied arguments. If this is omitted the container will simply instantiate with the default or supplied program (i.e. Python or Bash) and await input
+
+## CycleGAN example
 
     docker run -it \
         --name cgan \
@@ -130,4 +158,8 @@ This (admittedly bloated) Docker image contains the packages listed in `requirem
         --output=output --save-weights='true' --logging='true' \
         --epochs=50 --img-size=256 --batch-size=16
 
-Both examples above presume the Pix2Pix or CycleGAN scripts you want to run are located in the directory at `/home/kingj/scripts`. Change this directory path as needed. The shell script `driver.sh` automates the copying and uploading of key scripts for this repository to the GPU cluster. Also see `HELPME.md` for generic Docker and Linux tips.
+### Other tips:
+
+- `exit`: stops and exits the container. Container may be distroyed if `--rm` flag was used
+- `CTRL-c`: force stops operation in container
+- `CTRL-p CTRL-q`: escapes the container, though container persists
