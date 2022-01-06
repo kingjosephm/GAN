@@ -11,10 +11,6 @@
 
     docker volume create --name MERGEN_FLIR_output
 
-### List GPUs and their IDs
-
-    nvidia-smi --list-gpus
-
 ### Restart a previously instantiated, but stopped container in interactive mode
 
     docker start -i <container_ID or container_name>
@@ -31,7 +27,7 @@
 
     docker cp <container_name>:<source_path> <destination_path>
 
-`source_path` pertains to the path within the container. Note this must be run from outside a running or stopped container. It is not possible to move data out of a removed (deleted) container.
+`source_path` pertains to the path within the container. Note - this must be run from outside a running or stopped container. It is not possible to move data out of a removed (deleted) container.
 
 ### Other Docker commands
     $ docker ps  # lists running docker containers
