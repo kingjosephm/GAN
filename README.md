@@ -158,8 +158,32 @@ This (admittedly bloated) Docker image contains the packages listed in `requirem
         --output=output --save-weights='true' --logging='true' \
         --epochs=50 --img-size=256 --batch-size=16
 
-### Other tips:
+### Other tips for working interactively:
 
 - `exit`: stops and exits the container. Container may be distroyed if `--rm` flag was used
 - `CTRL-c`: force stops operation in container
 - `CTRL-p CTRL-q`: escapes the container, though container persists
+
+# Latest results
+Unfortunately, neither TensorFlow Pix2Pix nor CycleGAN model contained on this branch have yet demonstrated adequate performance. Several experiments have been run (described below) to bolster model performance. The results below are from the most up-to-date experiments.
+
+## Pix2Pix
+Run on 2022-01-03-12h59. Total training time on one GPU: 25.03 hours. Model parameters:
+
+- Epochs: 200
+- Lambda: 100
+- Generator loss: L1
+- Batch size: 8
+- image size: 256 x 256
+- Learning rate: 0.001
+- beta_1: 0.9
+- beta_2: 0.999
+
+### Cost functions
+![P2P Generator Loss](<./results/pix2pix/Pix2Pix Generator Total Loss.png>)
+![P2P Discriminator Loss](<./results/pix2pix/Pix2Pix Discriminator Loss.png>)
+
+### Sample images
+![P2P Img0](./results/pix2pix/img0.png)
+![P2P Img1](./results/pix2pix/img1.png)
+![P2P Img3](./results/pix2pix/img3.png)
