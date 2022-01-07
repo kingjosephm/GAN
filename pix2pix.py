@@ -362,8 +362,8 @@ def parse_opt():
     parser.add_argument('--lambda', type=int, default=100, help='lambda value for secondary generator loss (L1)')
     parser.add_argument('--validation-size', type=float, default=0.1, help='validation set size as share of number of training images')
     parser.add_argument('--test-img', type=int, default=5, help='number of test images to sample')
-    parser.add_argument('--learning-rate', type=float, default=0.001, help='learning rate for Adam optimizer for generator and discriminator')
-    parser.add_argument('--beta-1', type=float, default=0.9, help='exponential decay rate for 1st moment of Adam optimizer for generator and discriminator')
+    parser.add_argument('--learning-rate', type=float, default=2e-4, help='learning rate for Adam optimizer for generator and discriminator')
+    parser.add_argument('--beta-1', type=float, default=0.5, help='exponential decay rate for 1st moment of Adam optimizer for generator and discriminator')
     parser.add_argument('--beta-2', type=float, default=0.999,  help='exponential decay rate for 2st moment of Adam optimizer for generator and discriminator')
     # Predict param
     parser.add_argument('--weights', type=str, help='path to pretrained model weights for prediction',
