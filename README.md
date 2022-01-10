@@ -1,9 +1,9 @@
 # Introduction
-The code in this repository aims to develop a conditional generative adversarial network (cGAN) model to convert thermal-spectrum images to the visible spectrum. To accomplish this, we curate an image training dataset of matched thermal and visible images. 
+The code in this repository aims to develop a conditional generative adversarial network (cGAN) model to convert thermal-spectrum images to the visible spectrum.
 
-This cGAN model will serve as the *first model* in a three-part image classification pipeline of motor vehicle makes and models: 1) images are output from a thermal camera and supplied to the trained cGAN model for conversion to the visible spectrum; 2) the [YOLOv5 algorithm](https://github.com/ultralytics/yolov5) is used on converted visible images to generate bounding box coordinates around any passenger motor vehicles present in the image; 3) images are cropped to the YOLOv5 bounding box area and the make-model of the vehicle is classified using a [second model](https://github.boozallencsn.com/MERGEN/vehicle_make_model_classifier). A mockup of this workflow can be found in the [vehicle_image_pipeline](https://github.boozallencsn.com/MERGEN/vehicle_image_pipeline) repository. 
+This cGAN model will serve as the *first model* in a three-part image classification pipeline of motor vehicle makes and models: 1) images are output from a thermal camera and supplied to the trained cGAN model for conversion to the visible spectrum; 2) the [YOLOv5 algorithm](https://github.com/ultralytics/yolov5) is used on converted visible images to generate bounding box coordinates around any passenger motor vehicles present in the image; 3) images are cropped to the YOLOv5 bounding box area and the make-model of the vehicle is classified using a [second model](https://github.boozallencsn.com/MERGEN/vehicle_make_model_classifier). A mockup of this workflow can be found in the [vehicle_image_pipeline](https://github.boozallencsn.com/MERGEN/vehicle_image_pipeline) repository. The actual image pipeline will be run on an NVIDIA Jetson device and is still in development.
 
-Because of a dearth of adequately-sized, representative labeled thermal images of passenger vehicles, we train the vehicle make-model classifier model using labeled RGB images. For this reason, an upstream model is needed to convert thermal images to the visible spectrum prior to classification.
+Because of a dearth of adequately-sized, representative labeled thermal images of passenger vehicles, we train the vehicle make-model classifier model using labeled RGB images. For this reason, an upstream model is needed to convert thermal images to the visible spectrum prior to classification. We curate an image training dataset of matched thermal and visible images from [Teledyne FLIR](https://www.flir.com/oem/adas/adas-dataset-form/).
 
 # Repository branches
 - `main` **[this branch]**: implements Pix2Pix and CycleGAN models in TensorFlow
@@ -223,6 +223,7 @@ The majority of experiments have been attempted with the Pix2Pix model as it the
 
 # Potential future directions
 
+- Add dropout layer(s) since the model seems prone to overfitting
 - Focus efforts on other implementations of Pix2Pix/CycleGAN code, e.g. on the `pytorch` branch of this repository
 - Apply a Canny or other edge-detection filter on the thermal images at read-in
 - Vary patch size since the discriminator in both models relies on a patch GAN architecture
