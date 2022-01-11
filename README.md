@@ -1,3 +1,28 @@
+# Table of contents
+- [Introduction](#introduction)
+- [Quick start](#quick-start)
+    - [Requirements](#requirements)
+    - [Getting started](#getting-started)
+- [Running the code](#running-the-code)
+    - [Pix2Pix](#pix2pix)
+    - [CycleGAN](#cyclegan)
+- [Code structure](#code-structure)
+- [GPU cluster](#gpu-cluster)
+- [Docker](#docker)
+- [Run model using Docker](#run-model-using-docker)
+    - [Pix2Pix training example](#pix2pix-training-example)
+    - [CycleGAN training example](#cyclegan-training-example)
+- [Assessing model quality](#assessing-model-quality)
+- [Pix2Pix and CycleGAN](#pix2pix-and-cyclegan)
+- [Data](#data)
+    - [Training data](#training-data)
+    - [Other data](#other-data)
+- [Latest results](#latest-results)
+    - [Pix2Pix](#pix2pix-results)
+    - [CycleGAN](#cyclegan-results)
+- [Summary of experiments](#summary-of-experiments)
+- [Potential future directions](#potential-future-directions)
+
 # Introduction
 The code in this repository aims to develop a conditional generative adversarial network (cGAN) model to convert thermal-spectrum images to the visible spectrum.
 
@@ -5,49 +30,26 @@ This cGAN model will serve as the *first model* in a three-part image classifica
 
 Because of a dearth of adequately-sized, representative labeled thermal images of passenger vehicles, we train the vehicle make-model classifier model using labeled RGB images. For this reason, an upstream model is needed to convert thermal images to the visible spectrum prior to classification. We curate an image training dataset of matched thermal and visible images from [Teledyne FLIR](https://www.flir.com/oem/adas/adas-dataset-form/).
 
-# Repository branches
-- `main` **[this branch]**: implements Pix2Pix and CycleGAN models in TensorFlow
-- `pytorch`: implements Pix2Pix and CycleGAN models using PyTorch, code developed by [Jn-Yan Zhu and colleagues](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix)
-- `cycle_gan_inline_plts`: outdated, makes inline plots for matched images for CycleGAN
-- `MERGEN-87-sdg-optimizer-with-lr-batch-ratio`: an experimental branch to use the SGD optimizer instead of Adam. Initial results have not been any better
+# Quick start
+### Requirements
+- Linux or macOS (may work on Windows, not tested)
+- [ideally] NVIDIA GPU; will also work on CPU
 
+### Getting started
+Clone this repository
 
-# Pix2Pix and CycleGAN
-Originally developed by [Isola et al. (2017)](https://arxiv.org/abs/1611.07004), **Pix2Pix** is a generative adversarial network (GAN) created for general purpose image-to-image translation. As explained by [Jason Brownlee](https://machinelearningmastery.com/how-to-develop-a-pix2pix-gan-for-image-to-image-translation/), "[t]he GAN architecture is comprised of a generator model for outputting new plausible synthetic images, and a discriminator model that classifies images as real (from the dataset) or fake (generated). The discriminator model is updated directly, whereas the generator model is updated via the discriminator model. As such, the two models are trained simultaneously in an adversarial process where the generator seeks to better fool the discriminator and the discriminator seeks to better identify the counterfeit images. The Pix2Pix model is a type of conditional GAN, or cGAN, where the generation of the output image is conditional on an input, in this case, a source image. The discriminator is provided both with a source image and the target image and must determine whether the target is a plausible transformation of the source image. The generator is trained via adversarial loss, which encourages the generator to generate plausible images in the target domain. The generator is also updated via L1 loss measured between the generated image and the expected output image. This additional loss encourages the generator model to create plausible translations of the source image. The Pix2Pix GAN has been demonstrated on a range of image-to-image translation tasks such as converting maps to satellite photographs, black and white photographs to color, and sketches of products to product photographs."
+    git clone git@github.boozallencsn.com:MERGEN/GAN.git
 
-Whereas Pix2Pix relies on *paired images* (i.e. an image in one domain and an aligned matching image in another domain), **CycleGAN** is an image-to-image translation model for *unpaired images*. Developed by [Jun-Yan Zhu et al. (2017)](https://arxiv.org/abs/1703.10593), CycleGAN is advantageous when paired examples don't exist or are challenging to gather. CycleGAN uses the same GAN architecture as Pix2Pix, however, it trains two generators and two discriminators simultaneously. "One generator takes images from the first domain as input and outputs images for the second domain, and the other generator takes images from the second domain as input and generates images for the first domain. Discriminator models are then used to determine how plausible the generated images are and update the generator models accordingly. This extension alone might be enough to generate plausible images in each domain, but not sufficient to generate translations of the input images. [...] The CycleGAN uses an additional extension to the architecture called cycle consistency. This is the idea that an image output by the first generator could be used as input to the second generator and the output of the second generator should match the original image. The reverse is also true: that an output from the second generator can be fed as input to the first generator and the result should match the input to the second generator. Cycle consistency is a concept from machine translation where a phrase translated from English to French should translate from French back to English and be identical to the original phrase. The reverse process should also be true. [...] The CycleGAN encourages cycle consistency by adding an additional loss to measure the difference between the generated output of the second generator and the original image, and the reverse. This acts as a regularization of the generator models, guiding the image generation process in the new domain toward image translation" ([Brownlee 2019](https://machinelearningmastery.com/what-is-cyclegan/)).
+Set up Python virtual environment
 
+    pip install -r requirements.txt
 
-# Data
-We train our GAN models using paired thermal and visible images from [Teledyne FLIR](https://www.flir.com/oem/adas/adas-dataset-form/). FLIR matched images are developed primarily for object detection exercises, as they include object bounding boxes and labels. However, we discard this information as it is not relevant to the current effort. FLIR offers a [free version](https://www.flir.com/oem/adas/adas-dataset-form/) of their matched thermal-visible image data, which comprises 14,452 images taken in and around Santa Barbara, California. We use this dataset and combine it with FLIR's proprietary Europe dataset, which contains 14,353 matched images captured in London, Paris, Madrid, and several other Spanish cities. Both California and European original FLIR images are located on the MERGEN OneDrive Data folder in a directory titled `FLIR_ADAS_DATASET`.
+Pull Docker image
 
-FLIR raw visible (i.e. RGB spectrum) images are 1024h x 1224w pixels, whereas thermal raw images are 512h x 640w pixels. Visible images were produced with a camera with a wider field-of-view and so alignment is necessary for (at least) the Pix2Pix model. The script, `./create_training_imgs/curate_FLIR_data.py`, pairs matched thermal and visible images, and aligns these to the overlapping portion of the visible image. Both thermal and RGB images are converted to grayscale (1-channel) and concatenated horizontally with the thermal on the left, visible on the right. These are stored on the MERGEN OneDrive Data folder in `FLIR_matched_rgb_thermal.zip`. In some cases, a matched image was not found, or one of the pair was corrupt. Correspondingly, the total number of matched thermal-visible images totals **28,279**. The script, `./create_training_imgs/separate_FLIR_data.py`, takes as input the concatenated matched images and separates them into child thermal and visible directories. Matched thermal and visible images retain the same file name as the original image for linkage purposes. These are stored on OneDrive's MERGEN Data folder in `FLIR_separated.zip`. Each curated FLIR image is 512h x 640w pixels (1-channel), which must be resized by both GAN models to 256x256 or 512x512 on read-in.
+    docker pull king0759/tf2_gpu_jupyter_mpl:v3
 
-Below are two paired image examples from the FLIR dataset:
-
-![example1](./example_images/example1.png)
-![example2](./example_images/example2.png)
-
-Other data have also been previously used in this project. These data were collected by hand during the daytime only in local parking lots around the DC-Maryland-Virgina area and generally feature closely-cropped images of passenger vehicles. The originals of these images are stored on OneDrive in `original_thermal_visible_GAN_images.zip`. Concatenated thermal-visible images, not perfectly aligned, are found on OneDrive in `curated_thermal_visible_GAN_images.zip`. These images are each 512h x 640w pixels. These are no longer being used in model development.
-
-# Code structure
-Code in this particular branch draws heavily from TensorFlow's excellent tutorials on [Pix2Pix](https://www.tensorflow.org/tutorials/generative/pix2pix) and [CycleGAN](https://www.tensorflow.org/tutorials/generative/cyclegan). The Generator and Discriminator that lie at the heart of these model are nearly identical in TensorFlow's example code. Both models also use several either identical or similar function. We therefore convert these into an abstract base class (ABC Class) in Python, which is a superclass that allows methods to be linked across subclasses, alleviating redundant code, and also ensuring standardization across subclasses.
-
-Specifically, the following scripts and their purposes are:
-
-- `base_gan.py`: ABC superclass containing core methods used by both Pix2Pix and CycleGAN subclasses
-- `pix2pix.py`: contains methods for Pix2Pix subclass
-- `cycle_gan.py`: contains methods for CycleGAN subclass
-- `utils.py`: contains helper functions for both GAN models
-- `requirements.txt`: contains full list of all dependencies used to implement this code
-- `README.md`: this script, explains the branch of this repository
-- `Docker_Linux_HELPME.md`: useful common commands for Docker and Linux
-- `driver.sh`: shell script to automate the uploading of other scripts in this branch to the GPU cluster
-- `./create_training_imgs/curate_FLIR_data.py`: pairs matched thermal and visible images, and aligns these to the overlapping portion of the visible image
-- `./create_training_imgs/separate_FLIR_data.py`, separates concatenated matched images into child thermal and visible directories
 
 # Running the code
-We execute the code in Docker (see below), though focus in this section on how to call the code generally from command line. Note: this code was developed on a Mac and tested in a Linux (Docker) environment; its functionality in a PC environment is not guaranteed.
 
 ### Pix2Pix
 
@@ -77,6 +79,23 @@ In predict mode, the script creates the following subdirectories:
 <sup>*See script for options. Requirements differ for train and predict modes
 
 As with the pix2pix script, input image data is expected in an undifferentiated directory and random subsets of train/val/test will be created. For predict mode, only the `--input-images` path is required; for training mode, the `--target-images` path is also required. Model output for train and predict modes are the same as for `pix2pix.py`.
+
+
+# Code structure
+Code in this particular branch draws heavily from TensorFlow's excellent tutorials on [Pix2Pix](https://www.tensorflow.org/tutorials/generative/pix2pix) and [CycleGAN](https://www.tensorflow.org/tutorials/generative/cyclegan). The Generator and Discriminator that lie at the heart of these model are nearly identical in TensorFlow's example code. Both models also use several either identical or similar function. We therefore convert these into an abstract base class (ABC Class) in Python, which is a superclass that allows methods to be linked across subclasses, alleviating redundant code, and also ensuring standardization across subclasses.
+
+Specifically, the following scripts and their purposes are:
+
+- `base_gan.py`: ABC superclass containing core methods used by both Pix2Pix and CycleGAN subclasses
+- `pix2pix.py`: contains methods for Pix2Pix subclass
+- `cycle_gan.py`: contains methods for CycleGAN subclass
+- `utils.py`: contains helper functions for both GAN models
+- `requirements.txt`: contains full list of all dependencies used to implement this code
+- `README.md`: this script, explains the branch of this repository
+- `Docker_Linux_HELPME.md`: useful common commands for Docker and Linux
+- `driver.sh`: shell script to automate the uploading of other scripts in this branch to the GPU cluster
+- `./create_training_imgs/curate_FLIR_data.py`: pairs matched thermal and visible images, and aligns these to the overlapping portion of the visible image
+- `./create_training_imgs/separate_FLIR_data.py`, separates concatenated matched images into child thermal and visible directories
 
 
 # GPU cluster 
@@ -113,9 +132,9 @@ For this code, as well as the make-model classifier, the following image was use
 This (admittedly bloated) Docker image contains the packages listed in `requirements.txt`. Not all of the packages listed in this requirements file are strictly necessary for the code in this repository though.
 
 
-# Train model using Docker
+# Run model using Docker
 
-## Pix2Pix example
+## Pix2Pix training example
     
     docker run -it \
         --name p2p \
@@ -141,10 +160,9 @@ This (admittedly bloated) Docker image contains the packages listed in `requirem
 - `--gpus device=GPU-3c51591d-cfdb-f87c-ece8-8dcfdc81e67a`: Specifies a particular GPU to use. To use all GPUs change this to `--gpus all`
 - `king0759/tf2_gpu_jupyter_mpl:v3`: container image. If not stored locally this will be downloaded from Docker Hub
 - `python3`: specifies the container should be instantated using Python. To instead instantiate using Bash enter `/bin/bash` or omit entirely (this is the default for this Docker image). Note - the software available in a container depends on the container image
-- `./scripts/pix2pix.py --train --data=data --output=output --lambda=100 --epochs=200 \
-    --batch-size=8 --logging='true' --save-weights='true'`: instructs the container to run the Pix2Pix script with the supplied arguments. If this is omitted the container will simply instantiate with the default or supplied program (i.e. Python or Bash) and await input
+- `./scripts/pix2pix.py --train --data=data --output=output --lambda=100 --epochs=200 --batch-size=8 --logging='true' --save-weights='true'`: instructs the container to run the Pix2Pix script with the supplied arguments. If this is omitted the container will simply instantiate with the default or supplied program (i.e. Python or Bash) and await input
 
-## CycleGAN example
+## CycleGAN training example
 
     docker run -it \
         --name cgan \
@@ -185,10 +203,31 @@ We report some of these in the next section. For the CycleGAN model these losses
 However, metrics such as per-pixel squared error fail to evaluate the joint distributions of real and fake images and thus cannot capture the structure that the structured loss attempts to capture ([source](https://arxiv.org/abs/1611.07004)). Outputting a synthesized test image throughout the training process is our second quality assessment. These are found in the output directory in the `test_images` folder with the associated epoch in which they were generated. The full array of test images is also output at the end of training (shown below).
 
 
+# Pix2Pix and CycleGAN
+Originally developed by [Isola et al. (2017)](https://arxiv.org/abs/1611.07004), **Pix2Pix** is a generative adversarial network (GAN) created for general purpose image-to-image translation. As explained by [Jason Brownlee](https://machinelearningmastery.com/how-to-develop-a-pix2pix-gan-for-image-to-image-translation/), "[t]he GAN architecture is comprised of a generator model for outputting new plausible synthetic images, and a discriminator model that classifies images as real (from the dataset) or fake (generated). The discriminator model is updated directly, whereas the generator model is updated via the discriminator model. As such, the two models are trained simultaneously in an adversarial process where the generator seeks to better fool the discriminator and the discriminator seeks to better identify the counterfeit images. The Pix2Pix model is a type of conditional GAN, or cGAN, where the generation of the output image is conditional on an input, in this case, a source image. The discriminator is provided both with a source image and the target image and must determine whether the target is a plausible transformation of the source image. The generator is trained via adversarial loss, which encourages the generator to generate plausible images in the target domain. The generator is also updated via L1 loss measured between the generated image and the expected output image. This additional loss encourages the generator model to create plausible translations of the source image. The Pix2Pix GAN has been demonstrated on a range of image-to-image translation tasks such as converting maps to satellite photographs, black and white photographs to color, and sketches of products to product photographs."
+
+Whereas Pix2Pix relies on *paired images* (i.e. an image in one domain and an aligned matching image in another domain), **CycleGAN** is an image-to-image translation model for *unpaired images*. Developed by [Jun-Yan Zhu et al. (2017)](https://arxiv.org/abs/1703.10593), CycleGAN is advantageous when paired examples don't exist or are challenging to gather. CycleGAN uses the same GAN architecture as Pix2Pix, however, it trains two generators and two discriminators simultaneously. "One generator takes images from the first domain as input and outputs images for the second domain, and the other generator takes images from the second domain as input and generates images for the first domain. Discriminator models are then used to determine how plausible the generated images are and update the generator models accordingly. This extension alone might be enough to generate plausible images in each domain, but not sufficient to generate translations of the input images. [...] The CycleGAN uses an additional extension to the architecture called cycle consistency. This is the idea that an image output by the first generator could be used as input to the second generator and the output of the second generator should match the original image. The reverse is also true: that an output from the second generator can be fed as input to the first generator and the result should match the input to the second generator. Cycle consistency is a concept from machine translation where a phrase translated from English to French should translate from French back to English and be identical to the original phrase. The reverse process should also be true. [...] The CycleGAN encourages cycle consistency by adding an additional loss to measure the difference between the generated output of the second generator and the original image, and the reverse. This acts as a regularization of the generator models, guiding the image generation process in the new domain toward image translation" ([Brownlee 2019](https://machinelearningmastery.com/what-is-cyclegan/)).
+
+
+# Data
+## Training data
+We train our GAN models using paired thermal and visible images from [Teledyne FLIR](https://www.flir.com/oem/adas/adas-dataset-form/). FLIR matched images are developed primarily for object detection exercises, as they include object bounding boxes and labels. However, we discard this information as it is not relevant to the current effort. FLIR offers a [free version](https://www.flir.com/oem/adas/adas-dataset-form/) of their matched thermal-visible image data, which comprises 14,452 images taken in and around Santa Barbara, California. We use this dataset and combine it with FLIR's proprietary Europe dataset, which contains 14,353 matched images captured in London, Paris, Madrid, and several other Spanish cities. Both California and European original FLIR images are located on the MERGEN OneDrive Data folder in a directory titled `FLIR_ADAS_DATASET`.
+
+FLIR raw visible (i.e. RGB spectrum) images are 1024h x 1224w pixels, whereas thermal raw images are 512h x 640w pixels. Visible images were produced with a camera with a wider field-of-view and so alignment is necessary for (at least) the Pix2Pix model. The script, `./create_training_imgs/curate_FLIR_data.py`, pairs matched thermal and visible images, and aligns these to the overlapping portion of the visible image. Both thermal and RGB images are converted to grayscale (1-channel) and concatenated horizontally with the thermal on the left, visible on the right. These are stored on the MERGEN OneDrive Data folder in `FLIR_matched_rgb_thermal.zip`. In some cases, a matched image was not found, or one of the pair was corrupt. Correspondingly, the total number of matched thermal-visible images totals **28,279**. The script, `./create_training_imgs/separate_FLIR_data.py`, takes as input the concatenated matched images and separates them into child thermal and visible directories. Matched thermal and visible images retain the same file name as the original image for linkage purposes. These are stored on OneDrive's MERGEN Data folder in `FLIR_separated.zip`. Each curated FLIR image is 512h x 640w pixels (1-channel), which must be resized by both GAN models to 256x256 or 512x512 on read-in.
+
+Below are two paired image examples from the FLIR dataset:
+
+![example1](./example_images/example1.png)
+![example2](./example_images/example2.png)
+
+## Other data
+Other data have also been previously used in this project. These data were collected by hand during the daytime only in local parking lots around the DC-Maryland-Virgina area and generally feature closely-cropped images of passenger vehicles. The originals of these images are stored on OneDrive in `original_thermal_visible_GAN_images.zip`. Concatenated thermal-visible images, not perfectly aligned, are found on OneDrive in `curated_thermal_visible_GAN_images.zip`. These images are each 512h x 640w pixels. These are no longer being used in model development.
+
+
 # Latest results
 Unfortunately, neither TensorFlow Pix2Pix nor CycleGAN model contained on this branch have yet demonstrated adequate performance. Several experiments have been run (described below) to bolster model performance. The results below are from the most up-to-date experiments.
 
-## Pix2Pix
+## Pix2Pix results
 Run on 2022-01-03-12h59. Total training time on one GPU: 25.03 hours. Model parameters:
 
 - Epochs: 200
@@ -209,10 +248,10 @@ Run on 2022-01-03-12h59. Total training time on one GPU: 25.03 hours. Model para
 ![P2P Img1](./results/pix2pix/img1.png)
 ![P2P Img3](./results/pix2pix/img3.png)
 
-## CycleGAN
+## CycleGAN results
 ***TODO***
 
-# Previous experiments
+# Summary of experiments
 The majority of experiments have been attempted with the Pix2Pix model as it theoretically held the most promise. This model also trains approx. 3-4x faster than the CycleGAN model so iterating on experiments is easier.
 
 - Batch size, learning rate and optimizer: the authors of Pix2Pix apparently received the best performance using a batch size of 1 with the Adam optimizer and learning rates of 2e-4, beta_1=0.5, beta_2=0.999. The same was used in both Pix2Pix and CycleGAN TensorFlow tutorials so this was implemented in the current branch's code. Experiments were attempted with batch sizes of 1, 2, 4, and 8 using the same optimizer and learning rate (in hindsight the LR should've been adjusted). Results were all poor
