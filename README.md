@@ -82,20 +82,23 @@ As with the pix2pix script, input image data is expected in an undifferentiated 
 
 
 # Code structure
-Code in this particular branch draws heavily from TensorFlow's excellent tutorials on [Pix2Pix](https://www.tensorflow.org/tutorials/generative/pix2pix) and [CycleGAN](https://www.tensorflow.org/tutorials/generative/cyclegan). The Generator and Discriminator that lie at the heart of these model are nearly identical in TensorFlow's example code. Both models also use several either identical or similar function. We therefore convert these into an abstract base class (ABC Class) in Python, which is a superclass that allows methods to be linked across subclasses, alleviating redundant code, and also ensuring standardization across subclasses.
+Code in this particular branch draws heavily from TensorFlow's excellent tutorials on [Pix2Pix](https://www.tensorflow.org/tutorials/generative/pix2pix) and [CycleGAN](https://www.tensorflow.org/tutorials/generative/cyclegan). The Generator and Discriminator that lie at the heart of these model are nearly identical in TensorFlow's example code. Both models also use several either identical or similar function. We therefore convert these into an abstract base class (ABC Class) in Python.
 
-Specifically, the following scripts and their purposes are:
+### Root dir
 
-- `base_gan.py`: ABC superclass containing core methods used by both Pix2Pix and CycleGAN subclasses
-- `pix2pix.py`: contains methods for Pix2Pix subclass
-- `cycle_gan.py`: contains methods for CycleGAN subclass
-- `utils.py`: contains helper functions for both GAN models
-- `requirements.txt`: contains full list of all dependencies used to implement this code
-- `README.md`: this script, explains the branch of this repository
-- `Docker_Linux_HELPME.md`: useful common commands for Docker and Linux
-- `driver.sh`: shell script to automate the uploading of other scripts in this branch to the GPU cluster
-- `./create_training_imgs/curate_FLIR_data.py`: pairs matched thermal and visible images, and aligns these to the overlapping portion of the visible image
-- `./create_training_imgs/separate_FLIR_data.py`, separates concatenated matched images into child thermal and visible directories
+- [base_gan.py](base_gan.py): ABC superclass containing core methods used by both Pix2Pix and CycleGAN subclasses
+- [pix2pix.py](pix2pix.py): contains methods for Pix2Pix subclass
+- [cycle_gan.py](cycle_gan.py): contains methods for CycleGAN subclass
+- [utils.py](utils.py): contains helper functions for both GAN models
+- [requirements.txt](requirements.txt): contains full list of all dependencies used to implement this code
+- [README.md](README.md): this script, explains the branch of this repository
+- [Docker_Linux_HELPME.md](Docker_Linux_HELPME.md): useful common commands for Docker and Linux
+- [driver.sh](driver.sh): shell script to automate the uploading of other scripts in this branch to the GPU cluster
+
+### [create_training_imgs](create_training_imgs)
+
+- [curate_FLIR_data.py](./create_training_imgs/curate_FLIR_data.py): pairs matched thermal and visible images, and aligns these to the overlapping portion of the visible image
+- [separate_FLIR_data.py](./create_training_imgs/separate_FLIR_data.py), separates concatenated matched images into child thermal and visible directories
 
 
 # GPU cluster 
@@ -113,7 +116,7 @@ Data are stored on the cluster at:
 
 
 # Docker
-We train the GAN models in a Docker container (see [this link](https://docs.docker.com/get-started/overview/) for information on Docker). Also see `Docker_Linux_HELPME.md` for useful Docker and Linux commands. Containers create separate environments from the operating system, so training data and scripts must be moved into the container. Two options exist: create a [Docker volume](https://docs.docker.com/storage/volumes/) (preferred) that persists beyond the life of the container, or mount the data/scripts when the container is instantiated. Directly-mounted data/scripts do not persist beyond the life of the container.
+We train the GAN models in a Docker container (see [this link](https://docs.docker.com/get-started/overview/) for information on Docker). Also see [Docker_Linux_HELPME.md](Docker_Linux_HELPME.md) for useful Docker and Linux commands. Containers create separate environments from the operating system, so training data and scripts must be moved into the container. Two options exist: create a [Docker volume](https://docs.docker.com/storage/volumes/) (preferred) that persists beyond the life of the container, or mount the data/scripts when the container is instantiated. Directly-mounted data/scripts do not persist beyond the life of the container.
 
 ### Data volumes
 
@@ -213,7 +216,7 @@ Whereas Pix2Pix relies on *paired images* (i.e. an image in one domain and an al
 ## Training data
 We train our GAN models using paired thermal and visible images from [Teledyne FLIR](https://www.flir.com/oem/adas/adas-dataset-form/). FLIR matched images are developed primarily for object detection exercises, as they include object bounding boxes and labels. However, we discard this information as it is not relevant to the current effort. FLIR offers a [free version](https://www.flir.com/oem/adas/adas-dataset-form/) of their matched thermal-visible image data, which comprises 14,452 images taken in and around Santa Barbara, California. We use this dataset and combine it with FLIR's proprietary Europe dataset, which contains 14,353 matched images captured in London, Paris, Madrid, and several other Spanish cities. Both California and European original FLIR images are located on the MERGEN OneDrive Data folder in a directory titled `FLIR_ADAS_DATASET`.
 
-FLIR raw visible (i.e. RGB spectrum) images are 1024h x 1224w pixels, whereas thermal raw images are 512h x 640w pixels. Visible images were produced with a camera with a wider field-of-view and so alignment is necessary for (at least) the Pix2Pix model. The script, `./create_training_imgs/curate_FLIR_data.py`, pairs matched thermal and visible images, and aligns these to the overlapping portion of the visible image. Both thermal and RGB images are converted to grayscale (1-channel) and concatenated horizontally with the thermal on the left, visible on the right. These are stored on the MERGEN OneDrive Data folder in `FLIR_matched_rgb_thermal.zip`. In some cases, a matched image was not found, or one of the pair was corrupt. Correspondingly, the total number of matched thermal-visible images totals **28,279**. The script, `./create_training_imgs/separate_FLIR_data.py`, takes as input the concatenated matched images and separates them into child thermal and visible directories. Matched thermal and visible images retain the same file name as the original image for linkage purposes. These are stored on OneDrive's MERGEN Data folder in `FLIR_separated.zip`. Each curated FLIR image is 512h x 640w pixels (1-channel), which must be resized by both GAN models to 256x256 or 512x512 on read-in.
+FLIR raw visible (i.e. RGB spectrum) images are 1024h x 1224w pixels, whereas thermal raw images are 512h x 640w pixels. Visible images were produced with a camera with a wider field-of-view and so alignment is necessary for (at least) the Pix2Pix model. The script, [curate_FLIR_data.py](./create_training_imgs/curate_FLIR_data.py), pairs matched thermal and visible images, and aligns these to the overlapping portion of the visible image. Both thermal and RGB images are converted to grayscale (1-channel) and concatenated horizontally with the thermal on the left, visible on the right. These are stored on the MERGEN OneDrive Data folder in `FLIR_matched_rgb_thermal.zip`. In some cases, a matched image was not found, or one of the pair was corrupt. Correspondingly, the total number of matched thermal-visible images totals **28,279**. The script, [separate_FLIR_data.py](./create_training_imgs/separate_FLIR_data.py), takes as input the concatenated matched images and separates them into child thermal and visible directories. Matched thermal and visible images retain the same file name as the original image for linkage purposes. These are stored on OneDrive's MERGEN Data folder in `FLIR_separated.zip`. Each curated FLIR image is 512h x 640w pixels (1-channel), which must be resized by both GAN models to 256x256 or 512x512 on read-in.
 
 Below are two paired image examples from the FLIR dataset:
 
@@ -234,7 +237,7 @@ Run on 2022-01-03-12h59. Total training time on one GPU: 25.03 hours. Model para
 - Lambda: 100
 - Generator loss: L1
 - Batch size: 8
-- image size: 256 x 256
+- Image size: 256 x 256
 - Learning rate: 0.001
 - beta_1: 0.9
 - beta_2: 0.999
@@ -249,7 +252,28 @@ Run on 2022-01-03-12h59. Total training time on one GPU: 25.03 hours. Model para
 ![P2P Img3](./results/pix2pix/img3.png)
 
 ## CycleGAN results
-***TODO***
+Run on 2022-01-05-22h33. Total training time on one GPU 140 hours. Model parameters:
+
+- Epochs: 200
+- Lambda: 10
+- Batch size: 4 (default=1)
+- Image size: 256 x 256
+- Learning rate: 2e-4 * batch_size (default=2e-4)
+- beta_1: 0.5
+- beta_2: 0.999
+
+### Discriminator cost function X
+![CycleGAN Discriminator X](./results/cyclegan/CycleGAN%20Discriminator%20X%20Loss.png)
+### Discriminator cost function Y
+![CycleGAN Discriminator Y](./results/cyclegan/CycleGAN%20Discriminator%20Y%20Loss.png)
+### Total generator cost function X->Y
+![CycleGAN Generator X->Y](./results/cyclegan/CycleGAN%20Total%20X-%3EY%20Generator%20Loss.png)
+### Total generator cost function Y->X
+![CycleGAN Generator Y->X](./results/cyclegan/CycleGAN%20Total%20Y-%3EX%20Generator%20Loss.png)
+
+### Sample image
+![CycleGAN Img1](./results/cyclegan/img1.png)
+There's evidence of catastrophic learning failure beyond epoch 35.
 
 # Summary of experiments
 The majority of experiments have been attempted with the Pix2Pix model as it theoretically held the most promise. This model also trains approx. 3-4x faster than the CycleGAN model so iterating on experiments is easier.
@@ -259,10 +283,13 @@ The majority of experiments have been attempted with the Pix2Pix model as it the
 - Lambda: An couple experiments were run varying the default Lambda parameter of the Pix2Pix model from 50 to 150. Results were poor
 - SSIM loss: Srini suggested trying the [SSIM](https://www.tensorflow.org/api_docs/python/tf/image/ssim) loss instead of L1 for the generator loss of Pix2Pix. Generated image quality appeared subjectively worse than using L1 based on the default batch size, LR, and optimizer
 - Training epochs: The Pix2Pix authors recommend training for 200 epochs. Though we have not run experiments longer than this, validation loss statistics and test image quality do not improve significantly beyond about epoch 50
+- Converting visible to thermal: ???
 
 # Potential future directions
 
 - Add dropout layer(s) since the model seems prone to overfitting
-- Focus efforts on other implementations of Pix2Pix/CycleGAN code, e.g. on the `pytorch` branch of this repository
+- Focus efforts on other implementations of Pix2Pix/CycleGAN code, e.g. on the `pytorch` branch of this repository built on [Zhu et al.](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix)
 - Apply a Canny or other edge-detection filter on the thermal images at read-in
 - Vary patch size since the discriminator in both models relies on a patch GAN architecture
+- Visible to thermal using `pytorch` branch
+- Revisit using [ThermalGAN](https://github.com/vlkniaz/ThermalGAN). Apparently this was attempted earlier in the MERGEN project though decided against for some reason
