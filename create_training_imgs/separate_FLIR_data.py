@@ -3,7 +3,7 @@ import cv2
 
 if __name__ == '__main__':
 
-    path = '/Users/josephking/Documents/sponsored_projects/MERGEN/data/FLIR_matched_rgb_thermal'
+    path = '/Users/josephking/Documents/sponsored_projects/MERGEN/data/FLIR_matched_gray_thermal'
     output = '/Users/josephking/Documents/sponsored_projects/MERGEN/data/FLIR_separated'
     thermal_left = True  # thermal image on left side, visible on right
 
