@@ -1,14 +1,17 @@
 #!/bin/bash
 
 # Script arguments about number of epochs (n) and number of epochs with LR decay (d)
-while getopts n:d:s: flag
+while getopts e:d:s:o: flag
 do
     case "${flag}" in
-        n) n_epochs=${OPTARG};;
+        e) n_epochs=${OPTARG};;
         d) n_epochs_decay=${OPTARG};;
         s) save_epoch_freq=${OPTARG};;
+        o) orientation=${OPTARG};;
     esac
 done
+
+cd ..
 
 # Install missing Python depenencies, if any
 pip install -r ./scripts/pytorch-CycleGAN-and-pix2pix/requirements.txt
@@ -31,9 +34,9 @@ printf "\n-----------------------------\r\n" | tee /dev/fd/3
 
 # Call script
 python3 ./scripts/pytorch-CycleGAN-and-pix2pix/train.py --dataroot ./data --model pix2pix --name experiment \
---direction AtoB --dataset_mode aligned --n_epochs $n_epochs --n_epochs_decay $n_epochs_decay \
+--direction $orientation --dataset_mode aligned --n_epochs $n_epochs --n_epochs_decay $n_epochs_decay \
 --save_epoch_freq $save_epoch_freq --checkpoints_dir ./output/"$startdatetime" --input_nc 1 \
---output_nc 1 2>&1 | tee /dev/fd/3
+--output_nc 1 --verbose --display_id 0 2>&1 | tee /dev/fd/3
 
 
 enddatetime=`date +"%Y-%m-%d_%Hh%Mm"`
