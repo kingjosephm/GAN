@@ -27,6 +27,11 @@ def align_images(therm: np.ndarray, vis: np.ndarray, output: str, dims: tuple = 
     therm = cv2.cvtColor(therm, cv2.COLOR_BGR2GRAY)
     vis = cv2.cvtColor(vis, cv2.COLOR_BGR2GRAY)
 
+    # histogram equalization
+    clahe = cv2.createCLAHE(clipLimit=1.0, tileGridSize=(15, 15))
+    therm = clahe.apply(therm)
+    vis = clahe.apply(vis)
+
     # Apply Canny line sequence detection algorithm
     therm_canny = cv2.Canny(therm, 100, 200)
 
@@ -70,15 +75,25 @@ def align_images(therm: np.ndarray, vis: np.ndarray, output: str, dims: tuple = 
     resized_therm = cv2.resize(therm, (dims[1], dims[0]))
     resized_vis = cv2.resize(crop_img, (dims[1], dims[0]))
 
+    # blur to smooth noise
+    therm_enhanced = cv2.GaussianBlur(resized_therm, (0,0), sigmaX=0.5, sigmaY=0.5)
+
+    # Sharpen thermal image
+    kernel = np.array([[0, -1, 0],
+                       [-1, 5, -1],
+                       [0, -1, 0]])
+    therm_enhanced = cv2.filter2D(src=therm_enhanced, ddepth=-1, kernel=kernel)
+
+
     # Concat horizontally
-    concatenated = cv2.hconcat([resized_therm, resized_vis])
+    concatenated = cv2.hconcat([therm_enhanced, resized_vis])
 
     cv2.imwrite(output, concatenated)
 
 
 if __name__ == '__main__':
 
-    output_dir = '/Users/josephking/Documents/sponsored_projects/MERGEN/data/FLIR_matched_rgb_thermal'
+    output_dir = '/Users/josephking/Documents/sponsored_projects/MERGEN/data/FLIR_matched_gray_thermal'
 
     ################################
     ###### Images from Europe ######
@@ -127,7 +142,7 @@ if __name__ == '__main__':
                             align_images(therm=therm, vis=vis, output=os.path.join(output_dir, name))
 
     ################################
-    ###### Images from Europe ######
+    ### Images from San Francisco ##
     ################################
     sf = '/Users/josephking/Documents/sponsored_projects/MERGEN/data/FLIR_ADAS_DATASET/FLIR_ADAS_SF_1_0_0'
 
