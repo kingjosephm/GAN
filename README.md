@@ -21,7 +21,7 @@ The shell script, [torch_drive.sh](torch_driver.sh), should be called from comma
     sh ./scripts/torch_driver.sh -n 50 -d 50 -s 25 -o AtoB
 
 # Data
-Image data for this branch are the same as `main`; however, images are organized into child 'train' and 'test' directories. The script used to randomly select files and move them into these subdirectory is `create_torch_img_dataset.py`. These files can be found on the MERGEN OneDrive in `FLIR_Matched_gray_thermal_pytorch.zip`. 
+Image data for this branch are the same as `main`; however, images are organized into child 'train' and 'test' directories. The script used to randomly select files and move them into these subdirectory is `create_torch_img_dataset.py`. These files can be found on the MERGEN OneDrive in `FLIR_matched_gray_thermal_pytorch.zip`. 
 
 # GPU cluter & Docker
 ### Data 
