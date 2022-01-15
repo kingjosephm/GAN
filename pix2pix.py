@@ -144,6 +144,7 @@ class Pix2Pix(GAN):
             val = random.sample([i for i in contents if i not in test], int(val_obs))
 
             train = [i for i in contents if i not in test and i not in val]
+            train = random.sample(train, len(train))  # shuffle in lieu of tf.data.shuffle
 
             # Convert to tf.Dataset
             test = tf.data.Dataset.from_tensor_slices([self.config['data'] + '/' + i for i in test])
@@ -155,12 +156,10 @@ class Pix2Pix(GAN):
             test = test.batch(self.config["batch_size"]).prefetch(buffer_size=tf.data.AUTOTUNE)
 
             val = val.map(self.process_images_pred, num_parallel_calls=tf.data.AUTOTUNE)
-            val = val.shuffle(self.config['buffer_size'], reshuffle_each_iteration=True)
             val = val.batch(self.config["batch_size"]).prefetch(buffer_size=tf.data.AUTOTUNE)
 
             # Process training images
             train = train.map(self.process_images_train, num_parallel_calls=tf.data.AUTOTUNE)
-            train = train.shuffle(self.config['buffer_size'], reshuffle_each_iteration=True)
             train = train.batch(self.config["batch_size"]).prefetch(buffer_size=tf.data.AUTOTUNE)
 
         return train, val, test
