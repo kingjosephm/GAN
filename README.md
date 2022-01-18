@@ -42,3 +42,9 @@ Each run is put into a child directory according to the naming convention YYYY-M
 For this code the following Docker image was used:
 
     nvcr.io/nvidia/pytorch:21.12-py3
+
+# Results
+### Real image
+![real](./results/epoch198_real_B.png)
+### Predicted image
+![predicted](./results/epoch198_fake_B.png)
