@@ -36,7 +36,7 @@ printf "\n-----------------------------\r\n" | tee /dev/fd/3
 python3 ./scripts/pytorch-CycleGAN-and-pix2pix/train.py --dataroot ./data --model pix2pix --name experiment \
 --direction $orientation --dataset_mode aligned --n_epochs $n_epochs --n_epochs_decay $n_epochs_decay \
 --save_epoch_freq $save_epoch_freq --checkpoints_dir ./output/"$startdatetime" --input_nc 1 \
---output_nc 1 --verbose --display_id 0 2>&1 | tee /dev/fd/3
+--output_nc 1 --verbose --display_id 0 --load_size 542 --crop_size 512 2>&1 | tee /dev/fd/3
 
 
 enddatetime=`date +"%Y-%m-%d_%Hh%Mm"`
