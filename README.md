@@ -214,9 +214,11 @@ Whereas Pix2Pix relies on *paired images* (i.e. an image in one domain and an al
 
 # Data
 ## Training data
-We train our GAN models using paired thermal and visible images from [Teledyne FLIR](https://www.flir.com/oem/adas/adas-dataset-form/). FLIR matched images are developed primarily for object detection exercises, as they include object bounding boxes and labels. However, we discard this information as it is not relevant to the current effort. FLIR offers a [free version](https://www.flir.com/oem/adas/adas-dataset-form/) of their matched thermal-visible image data, which comprises 14,452 images taken in and around Santa Barbara, California. We use this dataset and combine it with FLIR's proprietary Europe dataset, which contains 14,353 matched images captured in London, Paris, Madrid, and several other Spanish cities. Both California and European original FLIR images are located on the MERGEN OneDrive Data folder in a directory titled `FLIR_ADAS_DATASET`.
+We train our GAN models using paired thermal and visible images from [Teledyne FLIR](https://www.flir.com/oem/adas/adas-dataset-form/). FLIR matched images are developed primarily for object detection exercises, as they include object bounding boxes and labels. However, we discard this information as it is not relevant to the current effort. FLIR offers a [free version](https://www.flir.com/oem/adas/adas-dataset-form/) of their matched thermal-visible image data, which comprises 14,452 images taken in and around Santa Barbara, California. We use this dataset and combine it with FLIR's proprietary Europe dataset, which contains 14,353 matched images captured in London, Paris, Madrid, and several other Spanish cities. Both California and European original FLIR images are located on the MERGEN OneDrive Data folder in [FLIR_ADAS_DATASET](https://boozallen.sharepoint.com/:f:/r/sites/MERGEN/Shared%20Documents/Data/FLIR_ADAS_DATASET?csf=1&web=1&e=JVSJGw).
 
-FLIR raw visible (i.e. RGB spectrum) images are 1024h x 1224w pixels, whereas thermal raw images are 512h x 640w pixels. Visible images were produced with a camera with a wider field-of-view and so alignment is necessary for (at least) the Pix2Pix model. The script, [curate_FLIR_data.py](./create_training_imgs/curate_FLIR_data.py), pairs matched thermal and visible images, and aligns these to the overlapping portion of the visible image. Both thermal and RGB images are converted to grayscale (1-channel) and concatenated horizontally with the thermal on the left, visible on the right. These are stored on the MERGEN OneDrive Data folder in `FLIR_matched_rgb_thermal.zip`. In some cases, a matched image was not found, or one of the pair was corrupt. Correspondingly, the total number of matched thermal-visible images totals **28,279**. The script, [separate_FLIR_data.py](./create_training_imgs/separate_FLIR_data.py), takes as input the concatenated matched images and separates them into child thermal and visible directories. Matched thermal and visible images retain the same file name as the original image for linkage purposes. These are stored on OneDrive's MERGEN Data folder in `FLIR_separated.zip`. Each curated FLIR image is 512h x 640w pixels (1-channel), which must be resized by both GAN models to 256x256 or 512x512 on read-in.
+FLIR raw visible (i.e. RGB spectrum) images are 1024h x 1224w pixels, whereas thermal raw images are 512h x 640w pixels. Visible images were produced with a camera with a wider field-of-view and so alignment is necessary for (at least) the Pix2Pix model. The script, [curate_FLIR_data.py](./create_training_imgs/curate_FLIR_data.py), pairs matched thermal and visible images, and aligns these to the overlapping portion of the visible image. Both thermal and RGB images are converted to grayscale (1-channel) and concatenated horizontally with the thermal on the left, visible on the right. *We also preprocess the images; we apply contrast limited adaptive histogram equalization (CLAHE) to locally equalize the dynamic contrast range of both grayscale and thermal images. For the thermal images we additionally apply a gaussian blur filter to reduce pixel noise and sharpen the image. At training time we also apply random cropping to further implement the images*. These data are stored on the MERGEN OneDrive Data folder in [FLIR_matched_grayscale_thermal.zip](https://boozallen.sharepoint.com/:u:/r/sites/MERGEN/Shared%20Documents/Data/FLIR_matched_gray_thermal.zip?csf=1&web=1&e=6e32rH). In some cases, a matched image was not found, or one of the pair was corrupt. Correspondingly, the total number of matched thermal-visible images totals **28,279**. 
+
+The script, [separate_FLIR_data.py](./create_training_imgs/separate_FLIR_data.py), takes as input the concatenated matched images and separates them into child thermal and visible directories. Matched thermal and visible images retain the same file name as the original image for linkage purposes. These are stored on OneDrive's MERGEN Data folder in [FLIR_separated.zip](https://boozallen.sharepoint.com/:u:/r/sites/MERGEN/Shared%20Documents/Data/FLIR_separated.zip?csf=1&web=1&e=xcFcdx). Each curated FLIR image is 512h x 640w pixels (1-channel), which must be resized by both GAN models to 256x256 or 512x512 on read-in.
 
 Below are two paired image examples from the FLIR dataset:
 
@@ -224,32 +226,36 @@ Below are two paired image examples from the FLIR dataset:
 ![example2](./example_images/example2.png)
 
 ## Other data
-Other data have also been previously used in this project. These data were collected by hand during the daytime only in local parking lots around the DC-Maryland-Virgina area and generally feature closely-cropped images of passenger vehicles. The originals of these images are stored on OneDrive in `original_thermal_visible_GAN_images.zip`. Concatenated thermal-visible images, not perfectly aligned, are found on OneDrive in `curated_thermal_visible_GAN_images.zip`. These images are each 512h x 640w pixels. These are no longer being used in model development.
+Other data have also been previously used in this project. These data were collected by hand during the daytime only in local parking lots around the DC-Maryland-Virginia area and generally feature closely-cropped images of passenger vehicles. The originals of these images are stored on OneDrive in [original_thermal_visible_GAN_images.zip](https://boozallen.sharepoint.com/:u:/r/sites/MERGEN/Shared%20Documents/Data/original_thermal_visible_GAN_images.zip?csf=1&web=1&e=AqeDsd). Concatenated thermal-visible images, not perfectly aligned, are found on OneDrive in [curated_thermal_visible_GAN_images.zip](https://boozallen.sharepoint.com/:u:/r/sites/MERGEN/Shared%20Documents/Data/curated_thermal_visible_GAN_images.zip?csf=1&web=1&e=DGe11H). These images are each 512h x 640w pixels. These are no longer being used in model development.
 
 
 # Latest results
-Unfortunately, neither TensorFlow Pix2Pix nor CycleGAN model contained on this branch have yet demonstrated adequate performance. Several experiments have been run (described below) to bolster model performance. The results below are from the most up-to-date experiments.
+Unfortunately, neither TensorFlow Pix2Pix nor CycleGAN model contained on this branch have yet demonstrated adequate performance. Several experiments have been run (described below) to bolster model performance. The results below are from the most up-to-date experiments. All results, including weights, can be found [here](https://boozallen.sharepoint.com/:u:/r/sites/MERGEN/Shared%20Documents/ML%20Model%20Results/GAN_model_experiments.zip?csf=1&web=1&e=wQZxga).
 
 ## Pix2Pix results
-Run on 2022-01-03-12h59. Total training time on one GPU: 25.03 hours. Model parameters:
+Run on 2022-01-15-18h27. Total training time on one GPU: 60.5 hours. Model parameters:
 
-- Epochs: 200
+- Epochs: 150
 - Lambda: 100
 - Generator loss: L1
-- Batch size: 8
-- Image size: 256 x 256
-- Learning rate: 0.001
+- Batch size: 4
+- Image size: 512 x 512
+- Learning rate: 0.008
 - beta_1: 0.9
 - beta_2: 0.999
+- direction: therm->vis
+
+### Sample image
+![P2P Img3](./results/pix2pix/therm->vis.png)
+
+### Similar results for the reverse
+![P2P Img3](./results/pix2pix/vis->therm.png)
+
+Note: this was run on 2022-01-15-18h26 with otherwise identical parameters.
 
 ### Cost functions
 ![P2P Generator Loss](<./results/pix2pix/Pix2Pix Generator Total Loss.png>)
 ![P2P Discriminator Loss](<./results/pix2pix/Pix2Pix Discriminator Loss.png>)
-
-### Sample images
-![P2P Img0](./results/pix2pix/img0.png)
-![P2P Img1](./results/pix2pix/img1.png)
-![P2P Img3](./results/pix2pix/img3.png)
 
 ## CycleGAN results
 Run on 2022-01-05-22h33. Total training time on one GPU 140 hours. Model parameters:
@@ -262,6 +268,10 @@ Run on 2022-01-05-22h33. Total training time on one GPU 140 hours. Model paramet
 - beta_1: 0.5
 - beta_2: 0.999
 
+### Sample image
+![CycleGAN Img1](./results/cyclegan/img1.png)
+There's evidence of catastrophic learning failure beyond epoch 35.
+
 ### Discriminator cost function X
 ![CycleGAN Discriminator X](./results/cyclegan/CycleGAN%20Discriminator%20X%20Loss.png)
 ### Discriminator cost function Y
@@ -271,25 +281,27 @@ Run on 2022-01-05-22h33. Total training time on one GPU 140 hours. Model paramet
 ### Total generator cost function Y->X
 ![CycleGAN Generator Y->X](./results/cyclegan/CycleGAN%20Total%20Y-%3EX%20Generator%20Loss.png)
 
-### Sample image
-![CycleGAN Img1](./results/cyclegan/img1.png)
-There's evidence of catastrophic learning failure beyond epoch 35.
-
 # Summary of experiments
-The majority of experiments have been attempted with the Pix2Pix model as it theoretically held the most promise. This model also trains approx. 3-4x faster than the CycleGAN model so iterating on experiments is easier.
+Most experiments have been attempted with the Pix2Pix model as it theoretically held the most promise. This model also trains approx. 4x faster than the CycleGAN model so iterating on experiments is easier.
 
 - Batch size, learning rate and optimizer: the authors of Pix2Pix apparently received the best performance using a batch size of 1 with the Adam optimizer and learning rates of 2e-4, beta_1=0.5, beta_2=0.999. The same was used in both Pix2Pix and CycleGAN TensorFlow tutorials so this was implemented in the current branch's code. Experiments were attempted with batch sizes of 1, 2, 4, and 8 using the same optimizer and learning rate (in hindsight the LR should've been adjusted). Results were all poor
 - Optimizer: An experiment was run using SGD with default learning rates and a batch size of 8 using Pix2Pix model. This yielded poor performance
 - Lambda: An couple experiments were run varying the default Lambda parameter of the Pix2Pix model from 50 to 150. Results were poor
 - SSIM loss: Srini suggested trying the [SSIM](https://www.tensorflow.org/api_docs/python/tf/image/ssim) loss instead of L1 for the generator loss of Pix2Pix. Generated image quality appeared subjectively worse than using L1 based on the default batch size, LR, and optimizer
 - Training epochs: The Pix2Pix authors recommend training for 200 epochs. Though we have not run experiments longer than this, validation loss statistics and test image quality do not improve significantly beyond about epoch 50
-- Converting visible to thermal: ???
+- Converting visible to thermal: Similar results
+- Image preprocessing (e.g. histogram equalization, blurring, sharpening): very slightly improved results
+- 512x512 images instead of (256x256): slight image improvement, in exchange for longer training time
 
 # Potential future directions
 
+- Alter image pipeline to identify vehicles in thermal images via YOLOv5, then crop to bounding box around vehicle and run GAN model
+- Expand dataset and/or enhance image augmentation
 - Add dropout layer(s) since the model seems prone to overfitting
 - Focus efforts on other implementations of Pix2Pix/CycleGAN code, e.g. on the `pytorch` branch of this repository built on [Zhu et al.](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix)
 - Apply a Canny or other edge-detection filter on the thermal images at read-in
 - Vary patch size since the discriminator in both models relies on a patch GAN architecture
 - Visible to thermal using `pytorch` branch
 - Revisit using [ThermalGAN](https://github.com/vlkniaz/ThermalGAN). Apparently this was attempted earlier in the MERGEN project though decided against for some reason
+- Experiment with [contrastive unpaired translation](https://github.com/taesungp/contrastive-unpaired-translation) model
+- Try other non-GAN models. One option would be to develop some kind of convolutional filter akin to [thermal_image_filter](https://github.boozallencsn.com/MERGEN/thermal_image_filter) with two concatenated models: a trainable bottom layer and an untrainable make-model classifier top layer. Weight updates would generate a CNN filter that maximizes the probability a vehicle is correctly classified. Srini’s SSIM models apparently works somewhat like this
