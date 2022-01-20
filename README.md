@@ -246,10 +246,10 @@ Run on 2022-01-15-18h27. Total training time on one GPU: 60.5 hours. Model param
 - direction: therm->vis
 
 ### Sample image
-![P2P Img3](./results/pix2pix/therm->vis.png)
+![P2P Img3](./results/pix2pix/therm_to_vis.png)
 
 ### Similar results for the reverse
-![P2P Img3](./results/pix2pix/vis->therm.png)
+![P2P Img3](./results/pix2pix/vis_to_therm.png)
 
 Note: this was run on 2022-01-15-18h26 with otherwise identical parameters.
 
